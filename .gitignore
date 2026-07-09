@@ -1,0 +1,17 @@
+# Workspace
+.agents
+graphify-out
+docs
+docs/GMS_SRS_v2.0.docx
+
+# Python / Django
+backend/venv/
+backend/.env
+*.pyc
+__pycache__/
+db.sqlite3
+
+# Node / React / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/src/assets/hero.png
