@@ -6,6 +6,7 @@ docs/GMS_SRS_v2.0.docx
 
 # Python / Django
 backend/venv/
+backend/.venv/
 backend/.env
 *.pyc
 __pycache__/
