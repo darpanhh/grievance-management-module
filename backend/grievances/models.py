@@ -59,10 +59,10 @@ class Grievance(models.Model):
     )
     is_anonymous = models.BooleanField(default=False)
     secret_code = models.CharField(
-        max_length=20,
+        max_length=128,
         blank=True,
         null=True,
-        help_text="Unique secret code issued to anonymous submitters for tracking."
+        help_text="Hashed secret code issued to anonymous submitters for tracking (plain-text shown once at creation)."
     )
     is_reopened = models.BooleanField(
         default=False,
@@ -137,7 +137,7 @@ class StatusHistory(models.Model):
         on_delete=models.CASCADE,
         related_name='status_history'
     )
-    previous_status = models.CharField(max_length=20, choices=Grievance.Status.choices)
+    previous_status = models.CharField(max_length=20, choices=Grievance.Status.choices, null=True, blank=True)
     new_status = models.CharField(max_length=20, choices=Grievance.Status.choices)
     action_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

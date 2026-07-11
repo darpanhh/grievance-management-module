@@ -36,20 +36,7 @@
 | RBAC Permission Classes (IsStudent, IsHOD, IsCampusAdmin, etc.) | ✅ Done |
 | URLs wired at `/api/auth/` | ✅ Done |
 
-### Infrastructure
-
-| Component | Status |
-|-----------|--------|
-| `docker-compose.yml` (PostgreSQL container) | ✅ Done |
-| `backend/.env` (environment configuration) | ✅ Done |
-| `backend/test.md` (testing guide for DRF UI) | ✅ Done |
-| `implementation-plan.md` (updated with backend-first approach) | ✅ Done |
-
----
-
-## ❌ Not Yet Completed
-
-### Phase 3: Grievance Submission & Rate Limiting (Backend) ✅
+### Phase 3: Grievance Submission & Rate Limiting (Backend)
 
 | Component | Status |
 |-----------|--------|
@@ -67,6 +54,19 @@
 | `POST /api/grievances/track/` — Anonymous tracking by ID + secret code | ✅ Done |
 | `config/urls.py` — Wired api/ + media file serving in DEBUG | ✅ Done |
 | StatusHistory created on submission | ✅ Done |
+
+### Infrastructure
+
+| Component | Status |
+|-----------|--------|
+| `docker-compose.yml` (PostgreSQL container) | ✅ Done |
+| `backend/.env` (environment configuration) | ✅ Done |
+| `backend/test.md` (testing guide for DRF UI) | ✅ Done |
+| `implementation-plan.md` (updated with backend-first approach) | ✅ Done |
+
+---
+
+## ❌ Not Yet Completed
 
 ### Phase 4: AI Spam Filtering (Backend)
 
