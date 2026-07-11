@@ -36,6 +36,25 @@
 | RBAC Permission Classes (IsStudent, IsHOD, IsCampusAdmin, etc.) | ✅ Done |
 | URLs wired at `/api/auth/` | ✅ Done |
 
+### Phase 3: Grievance Submission & Rate Limiting (Backend)
+
+| Component | Status |
+|-----------|--------|
+| `grievances/serializers.py` — All serializers (List, Create, Detail, Track, ref data) | ✅ Done |
+| `grievances/throttles.py` — DailyGrievanceThrottle (3/user/day, 429 at midnight) | ✅ Done |
+| `grievances/urls.py` — All route definitions | ✅ Done |
+| `grievances/views.py` — GrievanceListCreateView (role-scoped GET, rate-limited POST) | ✅ Done |
+| `grievances/views.py` — GrievanceDetailView (full nested data with role-scoping) | ✅ Done |
+| `POST /api/grievances/` — Submit with MultiPartParser + file validation | ✅ Done |
+| Daily rate limiting — max 3 per user per calendar day (DB-backed) | ✅ Done |
+| File attachment handling — max 3 files, max 5MB, allowed types validated | ✅ Done |
+| Anonymous submission — 8-char alphanumeric code, hashed with make_password() | ✅ Done |
+| `GET /api/categories/` — Public reference endpoint (no auth) | ✅ Done |
+| `GET /api/departments/` — Public reference endpoint (no auth) | ✅ Done |
+| `POST /api/grievances/track/` — Anonymous tracking by ID + secret code | ✅ Done |
+| `config/urls.py` — Wired api/ + media file serving in DEBUG | ✅ Done |
+| StatusHistory created on submission | ✅ Done |
+
 ### Infrastructure
 
 | Component | Status |
@@ -48,20 +67,6 @@
 ---
 
 ## ❌ Not Yet Completed
-
-### Phase 3: Grievance Submission & Rate Limiting (Backend)
-
-| Component | Status |
-|-----------|--------|
-| `grievances/serializers.py` | ❌ Not started |
-| `grievances/urls.py` | ❌ Not started |
-| `grievances/views.py` (grievance CRUD) | ❌ Needs implementation |
-| `POST /api/grievances/` (submit grievance) | ❌ Not started |
-| Daily rate limiting (max 3 per user) | ❌ Not started |
-| File attachment handling (max 3, 5MB each) | ❌ Not started |
-| Anonymous submission with secret code generation | ❌ Not started |
-| `GET /api/categories/` (reference endpoint) | ❌ Not started |
-| `GET /api/departments/` (reference endpoint) | ❌ Not started |
 
 ### Phase 4: AI Spam Filtering (Backend)
 
@@ -138,4 +143,4 @@
 
 ## Next Step
 
-**Phase 3 — Grievance Submission & Rate Limiting**
+**Phase 4 — AI Spam Filtering**
