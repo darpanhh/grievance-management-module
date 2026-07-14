@@ -1,4 +1,4 @@
-# Grievance Management System (GMS)
+# Grievance Management System(GMS)
 
 A web-based platform that lets students and staff submit, track, and resolve grievances through a single structured channel, instead of relying on informal methods like emailing a teacher or talking to the HOD in person.
 
