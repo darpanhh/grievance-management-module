@@ -66,19 +66,19 @@
 
 ---
 
-## ❌ Not Yet Completed
+## ✅ Completed
 
 ### Phase 4: AI Spam Filtering (Backend)
 
 | Component | Status |
 |-----------|--------|
-| `grievances/services/spam_detector.py` | ❌ Not started |
-| SpamDetectorInterface (Strategy pattern) | ❌ Not started |
-| KeywordSpamDetector (initial implementation) | ❌ Not started |
-| Spam detection integrated into submission pipeline | ❌ Not started |
-| `GET /api/admin/spam-queue/` | ❌ Not started |
-| `POST /api/admin/spam-queue/{id}/reinstate/` | ❌ Not started |
-| `POST /api/grievances/{id}/appeal-spam/` | ❌ Not started |
+| `grievances/services/spam_detector.py` | ✅ Done |
+| SpamDetectorInterface (Strategy pattern) | ✅ Done |
+| KeywordSpamDetector (initial implementation) | ✅ Done |
+| Spam detection integrated into submission pipeline | ✅ Done |
+| `GET /api/admin/spam-queue/` | ✅ Done |
+| `POST /api/admin/spam-queue/{id}/reinstate/` | ✅ Done |
+| `POST /api/grievances/{id}/appeal-spam/` | ✅ Done |
 
 ### Phase 5: Grievance Routing (Backend)
 
@@ -143,4 +143,4 @@
 
 ## Next Step
 
-**Phase 4 — AI Spam Filtering**
+**Phase 5 — Grievance Routing**
