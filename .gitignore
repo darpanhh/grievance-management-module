@@ -1,5 +1,6 @@
 # Workspace
 .agents
+.claude/
 graphify-out
 docs
 docs/GMS_SRS_v2.0.docx

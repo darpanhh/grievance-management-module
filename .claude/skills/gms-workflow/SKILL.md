@@ -33,9 +33,10 @@ When the user says "start Phase 3" (or any phase), execute the **full lifecycle*
 
 ```
 STEP 1 — Git Setup: pull main → create feat/3-xxx branch → switch
-STEP 2 — Write ALL code for that phase
-STEP 3 — Commit & Push: git add → commit (show user message) → push
-STEP 4 — Update Progress Tracker → tell user what's next
+STEP 2 — Write ALL code for that phase (implementation + tests)
+STEP 3 — Run all tests and verify they pass
+STEP 4 — Commit & Push: git add → commit (show user message) → push
+STEP 5 — Update Progress Tracker → tell user what's next
 ```
 
 ---
@@ -78,6 +79,61 @@ For each phase below, read `implementation-plan.md` for the full specs. Write **
 - Status badge colors: SUBMITTED=blue(#3B82F6), SPAM=red(#EF4444), UNDER_REVIEW=amber(#F59E0B), RESPONDED=teal(#10B981), REOPENED=purple(#8B5CF6), ESCALATED=orange(#F97316), RESOLVED=green(#22C55E), CLOSED=gray(#6B7280).
 - Anonymous grievance: never show submitter name in UI.
 - Role-aware: buttons/actions only shown for permitted roles.
+
+### Testing Conventions
+
+**Every phase must include test files** in `backend/test/<phase-name>/test.py`.
+
+Test file structure:
+```python
+import sys, os
+from pathlib import Path
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+os.environ.setdefault('USE_SQLITE', 'True')
+import django
+django.setup()
+
+from django.core.management import call_command
+
+def setup_db():
+    """Ensure all database tables exist (safe to call multiple times)."""
+    call_command('migrate', verbosity=0, interactive=False, run_syncdb=True)
+```
+
+Test file conventions:
+- Use plain `assert` statements (no unittest.TestCase needed — simpler and self-contained)
+- Each test is a standalone function `test_<description>()`
+- Call `setup_db()` inside `run()` before any tests execute
+- `setup_db()` is NOT needed for pure-Python tests (no DB queries)
+- Use `rest_framework.test.APIClient` for API endpoint tests
+- Every test prints `  PASS <name>` on success or raises an `AssertionError`
+- Tests run via: `cd backend && python test/<phase-name>/test.py`
+- Wipe only test-created data in each test (avoid using transactions — SQLite may not support them across raw connections)
+
+Runner template at the bottom of every test file:
+```python
+def run():
+    setup_db()  # omit if pure-Python with no DB
+    tests = [("label", test_fn), ...]
+    passed = failed = 0
+    for label, fn in tests:
+        try:
+            fn(); passed += 1
+        except AssertionError as e:
+            print(f"  FAIL {label}: {e}"); failed += 1
+        except Exception as e:
+            print(f"  ERROR {label}: {e}"); failed += 1
+    print(f"Results: {passed} passed, {failed} failed, {passed + failed} total")
+    return failed == 0
+
+if __name__ == '__main__':
+    success = run()
+    sys.exit(0 if success else 1)
+```
 
 ---
 
@@ -151,6 +207,20 @@ For each phase below, read `implementation-plan.md` for the full specs. Write **
 - Category is classification-only — never used for routing
 - List/detail view scoping is already implemented in Phase 3
 
+**Tests to create** — `backend/test/5-grievance-routing/test.py`:
+
+| # | Test | What it verifies |
+|---|------|------------------|
+| 1 | `test_route_to_selected_department` | Grievance routed to submitter's selected department |
+| 2 | `test_route_defaults_to_user_department` | No selected dept -> defaults to submitter's dept |
+| 3 | `test_status_changes_to_under_review` | After routing, status becomes UNDER_REVIEW |
+| 4 | `test_status_history_logged_on_routing` | StatusHistory entry created when routed |
+| 5 | `test_category_never_affects_routing` | Department routing is independent of category |
+| 6 | `test_hod_sees_department_grievances` | HOD sees only their department's grievances |
+| 7 | `test_hod_cannot_see_other_department` | HOD cannot access grievances from other depts |
+
+Run via: `cd backend && python test/5-grievance-routing/test.py`
+
 ---
 
 ### Phase 6 — Response & Escalation Workflow
@@ -180,7 +250,25 @@ For each phase below, read `implementation-plan.md` for the full specs. Write **
 - Signal: on `pre_save`, compare old vs new status. If changed, create StatusHistory. Track user via `instance._action_by`.
 - Escalation cron: find grievances with status in (UNDER_REVIEW, RESPONDED, REOPENED) where `updated_at < now - 7 days`. Set ESCALATED, log history.
 
----
+**Tests to create** — `backend/test/6-response--escalation-workflow/test.py`:
+
+| # | Test | What it verifies |
+|---|------|------------------|
+| 1 | `test_hod_respond_under_review` | HOD can respond when status is UNDER_REVIEW |
+| 2 | `test_hod_respond_reopened` | HOD can respond when status is REOPENED |
+| 3 | `test_respond_changes_status_to_responded` | After response, status becomes RESPONDED |
+| 4 | `test_non_hod_cannot_respond` | Staff/Student cannot use respond endpoint |
+| 5 | `test_submitter_resolve` | Submitter can resolve when status is RESPONDED |
+| 6 | `test_non_submitter_cannot_resolve` | Other users cannot resolve |
+| 7 | `test_submitter_reopen` | Submitter can reopen when status is RESPONDED |
+| 8 | `test_resolve_changes_status` | After resolve, status becomes RESOLVED |
+| 9 | `test_reopen_sets_is_reopened_flag` | Reopen sets is_reopened=True |
+| 10 | `test_admin_resolve_escalated` | Campus Admin can resolve ESCALATED grievances |
+| 11 | `test_escalate_command_finds_stale` | Cron finds grievances older than 7 days |
+| 12 | `test_status_history_logged_on_transition` | Signal creates StatusHistory on every transition |
+| 13 | `test_invalid_transition_blocked` | Invalid transition (e.g. SUBMITTED to RESOLVED) is rejected |
+
+Run via: `cd backend && python test/6-response--escalation-workflow/test.py`
 
 ### Phase 7 — Dashboards, Search & Export
 
@@ -202,6 +290,25 @@ For each phase below, read `implementation-plan.md` for the full specs. Write **
 - Admin dashboard: aggregate counts by status, escalated count, spam count, recent 10 items
 - Search/filter: add DRF's `SearchFilter` and `OrderingFilter` backends to list views. Support query params: `search`, `category`, `status`, `date_from`, `date_to`, `ordering`.
 - Export: CSV with all grievance fields (excluding anonymous identity). Filterable by department, status, date range.
+
+**Tests to create** — `backend/test/7-dashboards--search--export/test.py`:
+
+| # | Test | What it verifies |
+|---|------|------------------|
+| 1 | `test_student_dashboard` | Student dashboard returns own grievances with counts |
+| 2 | `test_department_dashboard` | HOD sees department grievances with tabs |
+| 3 | `test_admin_dashboard` | Campus Admin sees system-wide stats |
+| 4 | `test_search_by_title` | Search query filters grievances by title |
+| 5 | `test_filter_by_status` | Status query param filters correctly |
+| 6 | `test_filter_by_category` | Category query param filters correctly |
+| 7 | `test_filter_by_date_range` | date_from/date_to filters correctly |
+| 8 | `test_ordering` | Ordering param sorts results |
+| 9 | `test_export_csv` | CSV export returns correct headers and data |
+| 10 | `test_export_filters` | Export respects department/status/date filters |
+| 11 | `test_export_excludes_anonymous_identity` | Anonymous submitter name excluded from export |
+| 12 | `test_non_admin_cannot_export` | Only Campus Admin can access export |
+
+Run via: `cd backend && python test/7-dashboards--search--export/test.py`
 
 ---
 
@@ -308,6 +415,9 @@ Scopes: `backend`, `frontend`, `api`, `models`, `auth`, `services`, `ci`
 
 ```bash
 git commit -m "<message>"
+git log -1 --format='%B' | sed '/^Co-Authored-By:/d' | git commit --amend --file=-
+git push origin <branch-name>
+```
 git push origin <branch-name>
 ```
 
