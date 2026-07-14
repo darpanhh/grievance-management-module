@@ -80,7 +80,7 @@ grievance-management-module/
 │   │   │   ├── AdminDashboard.jsx
 │   │   │   └── GrievanceDetail.jsx
 │   │   ├── services/
-│   │   │   └── api.js                # Axios API client
+│   │   │   └── api.js                # API client
 │   │   ├── contexts/
 │   │   │   └── AuthContext.jsx        # Auth state management
 │   │   ├── App.jsx                   # Root component (exists)
@@ -883,80 +883,12 @@ EMAIL_HOST_PASSWORD=email-password
 
 ---
 
-## 13. Task Breakdown for 4-Person Team
 
-Based on the SRS authoring team (Group BCT AB: Alex, Darpan, Avinash, Abhishek).
 
-### Recommended Partitioning
 
-**Person A — Backend Core (Models + Auth + Submission)**
-- [ ] Set up custom User model with roles
-- [ ] Create all 8 models (Department, Category, User, Grievance, AIAnalysis, Response, StatusHistory, Attachment)
-- [ ] Run migrations, seed reference data
-- [ ] Registration + Login + Password Reset endpoints
-- [ ] JWT authentication configuration
-- [ ] RBAC permission classes
-- [ ] Grievance submission endpoint with rate limiting
-- [ ] File upload handling
+## 13. Appendix — Status Transition Rules
 
-**Person B — Backend Workflow (Spam + Routing + Response + Escalation)**
-- [ ] AI spam detection service (interface + keyword implementation)
-- [ ] Spam queue + reinstate endpoints
-- [ ] Appeal mechanism
-- [ ] Automatic routing service
-- [ ] Department-scoped views
-- [ ] Response submission (HOD)
-- [ ] Resolve / Reopen endpoints
-- [ ] Auto-escalation cron job
-- [ ] Campus Admin escalation resolution
-- [ ] Status transition validation
-- [ ] StatusHistory auto-logging (signals or model save override)
-- [ ] Dashboard endpoints (student, department, admin)
-- [ ] Search + filter
-- [ ] Export (CSV/PDF)
-
-**Person C — Frontend (All UI)**
-- [ ] Auth context + protected routing
-- [ ] Login, Register, Password Reset pages
-- [ ] Grievance submission form (with file upload + anonymous toggle)
-- [ ] Anonymous tracking page
-- [ ] Student dashboard
-- [ ] Department dashboard (HOD/Staff views + response modal)
-- [ ] Campus Admin dashboard (spam queue + escalated + export)
-- [ ] Grievance detail page with full history
-- [ ] Status badges, search/filter component
-- [ ] Error handling + loading states everywhere
-
-**Person D — Cross-Cutting (Infrastructure + Integration + Testing)**
-- [ ] Frontend-backend integration testing (all flows)
-- [ ] Docker Compose (PostgreSQL + web)
-- [ ] `.env` configuration and secrets management
-- [ ] Media file serving configuration
-- [ ] Security hardening (CSP headers, HTTPS setup, password hashers)
-- [ ] Logging configuration
-- [ ] Backup script setup
-- [ ] API endpoint testing (DRF test cases or Postman collection)
-- [ ] CI/CD pipeline (GitHub Actions for lint + test)
-- [ ] Documentation (README, deployment guide, API reference)
-
-### Suggested Build Order (Backend-First)
-
-| Sprint | Duration | Focus |
-|--------|----------|-------|
-| Sprint 1 | Week 1 | Phase 2 — Auth & RBAC (JWT, register, login, permissions) |
-| Sprint 2 | Week 2 | Phase 3 — Grievance submission, rate limiting, file uploads |
-| Sprint 3 | Week 3 | Phase 4 — AI spam detection, spam queue, appeal |
-| Sprint 4 | Week 4 | Phase 5 — Automatic routing, department-scoped views |
-| Sprint 5 | Week 5 | Phase 6 — Response, escalation workflow, cron job |
-| Sprint 6 | Week 6 | Phase 7 — Dashboards, search, export (CSV/PDF) |
-| Sprint 7 | Week 7 | Phase 8 — All frontend UI (after backend is complete) |
-| Sprint 8 | Week 8 | Phase 9–10 — NFRs, production readiness, deployment |
-
----
-
-## 14. Appendix — Status Transition Rules
-
-### 14.1 Complete Transition Table
+### 13.1 Complete Transition Table
 
 ```
 ┌────────────┐     ┌──────────┐
@@ -989,7 +921,7 @@ Spam ───────────▶ Submitted (Campus Admin reinstates)
 Spam ───────────▶ Closed (Campus Admin confirms spam)
 ```
 
-### 14.2 Visualization by User Role
+### 13.2 Visualization by User Role
 
 **Submitter triggers:**
 ```
