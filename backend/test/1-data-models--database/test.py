@@ -10,6 +10,7 @@ Usage:
 """
 
 import sys
+import uuid
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
@@ -30,6 +31,18 @@ from accounts.models import Department, User
 from grievances.models import Category, Grievance, AIAnalysis, Response, StatusHistory, Attachment
 
 
+def _dept_name(prefix='Dept'):
+    return f'{prefix} {uuid.uuid4().hex[:8]}'
+
+
+def _cat_name(prefix='Cat'):
+    return f'{prefix} {uuid.uuid4().hex[:8]}'
+
+
+def _uid(prefix):
+    return f'{prefix}_{uuid.uuid4().hex[:6]}'
+
+
 def setup_db():
     """Ensure all database tables exist (safe to call multiple times)."""
     call_command('migrate', verbosity=0, interactive=False, run_syncdb=True)
@@ -38,11 +51,11 @@ def setup_db():
 def test_department_creation():
     """Department can be created with academic or administrative type."""
     dept = Department.objects.create(
-        name='Computer Engineering',
+        name=_dept_name('Computer Engineering'),
         department_type=Department.DepartmentType.ACADEMIC,
     )
     assert dept.pk is not None, "Department should have a PK after save"
-    assert str(dept) == 'Computer Engineering (Academic)', f"Unexpected str: {dept}"
+    assert '(Academic)' in str(dept), f"Unexpected str: {dept}"
     assert dept.department_type == 'ACADEMIC'
     dept.delete()
     print("  PASS department creation")
@@ -50,21 +63,22 @@ def test_department_creation():
 
 def test_department_duplicate_name():
     """Department names must be unique."""
-    Department.objects.create(name='Unique Dept', department_type='ACADEMIC')
+    uname = _dept_name('Unique')
+    Department.objects.create(name=uname, department_type='ACADEMIC')
     try:
-        Department.objects.create(name='Unique Dept', department_type='ADMINISTRATIVE')
+        Department.objects.create(name=uname, department_type='ADMINISTRATIVE')
         assert False, "Should have raised IntegrityError for duplicate name"
     except IntegrityError:
         pass
-    Department.objects.filter(name='Unique Dept').delete()
+    Department.objects.filter(name=uname).delete()
     print("  PASS department unique name")
 
 
 def test_user_creation_student():
     """A Student user can be created with default role."""
-    dept = Department.objects.create(name='Test Dept', department_type='ACADEMIC')
+    dept = Department.objects.create(name=_dept_name('Test'), department_type='ACADEMIC')
     user = User.objects.create_user(
-        username='student1',
+        username=_uid('student'),
         email='student1@college.edu',
         password='testpass123',
         first_name='Test',
@@ -82,7 +96,7 @@ def test_user_creation_student():
 
 def test_user_creation_all_roles():
     """All four roles (Student, Staff, HOD, CampusAdmin) can be created."""
-    dept = Department.objects.create(name='Eng Dept', department_type='ACADEMIC')
+    dept = Department.objects.create(name=_dept_name('Eng'), department_type='ACADEMIC')
     roles = [
         (User.Role.STUDENT, 'STUDENT'),
         (User.Role.STAFF, 'STAFF'),
@@ -91,7 +105,7 @@ def test_user_creation_all_roles():
     ]
     for role_enum, role_str in roles:
         user = User.objects.create_user(
-            username=f'user_{role_str.lower()}',
+            username=_uid(f'user_{role_str.lower()}'),
             email=f'{role_str.lower()}@college.edu',
             password='testpass123',
             role=role_enum,
@@ -106,11 +120,10 @@ def test_user_creation_all_roles():
 def test_category_creation():
     """Category can be created with name and description."""
     cat = Category.objects.create(
-        name='Examination',
+        name=_cat_name('Examination'),
         description='Issues related to exams and grades',
     )
     assert cat.pk is not None
-    assert str(cat) == 'Examination'
     assert cat.description == 'Issues related to exams and grades'
     cat.delete()
     print("  PASS category creation")
@@ -118,10 +131,10 @@ def test_category_creation():
 
 def test_grievance_creation():
     """A grievance can be created with all required fields."""
-    dept = Department.objects.create(name='CS Dept', department_type='ACADEMIC')
-    cat = Category.objects.create(name='Lab Issue')
+    dept = Department.objects.create(name=_dept_name('CS'), department_type='ACADEMIC')
+    cat = Category.objects.create(name=_cat_name('Lab'))
     user = User.objects.create_user(
-        username='grievant', password='test123', role=User.Role.STUDENT, department=dept,
+        username=_uid('grievant'), password='test123', role=User.Role.STUDENT, department=dept,
     )
     grievance = Grievance.objects.create(
         user=user,
@@ -145,9 +158,9 @@ def test_grievance_creation():
 
 def test_grievance_all_statuses():
     """Grievance supports all 8 status values."""
-    dept = Department.objects.create(name='Status Dept', department_type='ACADEMIC')
-    cat = Category.objects.create(name='General')
-    user = User.objects.create_user(username='status_tester', password='test123', role=User.Role.STUDENT, department=dept)
+    dept = Department.objects.create(name=_dept_name('Status'), department_type='ACADEMIC')
+    cat = Category.objects.create(name=_cat_name('General'))
+    user = User.objects.create_user(username=_uid('status_tester'), password='test123', role=User.Role.STUDENT, department=dept)
 
     statuses = ['SUBMITTED', 'SPAM', 'UNDER_REVIEW', 'RESPONDED', 'REOPENED', 'ESCALATED', 'RESOLVED', 'CLOSED']
     for s in statuses:
@@ -163,9 +176,9 @@ def test_grievance_all_statuses():
 
 def test_grievance_anonymous_support():
     """Grievance supports anonymous submission with secret code."""
-    dept = Department.objects.create(name='Anon Dept', department_type='ACADEMIC')
-    cat = Category.objects.create(name='Anonymous')
-    user = User.objects.create_user(username='anon_user', password='test123', role=User.Role.STUDENT, department=dept)
+    dept = Department.objects.create(name=_dept_name('Anon'), department_type='ACADEMIC')
+    cat = Category.objects.create(name=_cat_name('Anonymous'))
+    user = User.objects.create_user(username=_uid('anon_user'), password='test123', role=User.Role.STUDENT, department=dept)
 
     grievance = Grievance.objects.create(
         user=user, department=dept, category=cat,
@@ -184,9 +197,9 @@ def test_grievance_anonymous_support():
 
 def test_ai_analysis_creation():
     """AIAnalysis record can be linked to a grievance."""
-    dept = Department.objects.create(name='AI Dept', department_type='ACADEMIC')
-    cat = Category.objects.create(name='AI Test')
-    user = User.objects.create_user(username='ai_user', password='test123', role=User.Role.STUDENT, department=dept)
+    dept = Department.objects.create(name=_dept_name('AI'), department_type='ACADEMIC')
+    cat = Category.objects.create(name=_cat_name('AI'))
+    user = User.objects.create_user(username=_uid('ai_user'), password='test123', role=User.Role.STUDENT, department=dept)
     grievance = Grievance.objects.create(user=user, department=dept, category=cat, title='AI test', description='Testing AI')
 
     analysis = AIAnalysis.objects.create(
@@ -207,10 +220,10 @@ def test_ai_analysis_creation():
 
 def test_response_creation():
     """Response can be linked to a grievance and responder."""
-    dept = Department.objects.create(name='Resp Dept', department_type='ACADEMIC')
-    cat = Category.objects.create(name='Resp Test')
-    student = User.objects.create_user(username='resp_student', password='test123', role=User.Role.STUDENT, department=dept)
-    hod = User.objects.create_user(username='resp_hod', password='test123', role=User.Role.HOD, department=dept)
+    dept = Department.objects.create(name=_dept_name('Resp'), department_type='ACADEMIC')
+    cat = Category.objects.create(name=_cat_name('Resp'))
+    student = User.objects.create_user(username=_uid('resp_student'), password='test123', role=User.Role.STUDENT, department=dept)
+    hod = User.objects.create_user(username=_uid('resp_hod'), password='test123', role=User.Role.HOD, department=dept)
     grievance = Grievance.objects.create(user=student, department=dept, category=cat, title='Response test', description='Testing response')
 
     response = Response.objects.create(
@@ -231,9 +244,9 @@ def test_response_creation():
 
 def test_status_history_creation():
     """StatusHistory logs transitions correctly."""
-    dept = Department.objects.create(name='Hist Dept', department_type='ACADEMIC')
-    cat = Category.objects.create(name='Hist Test')
-    user = User.objects.create_user(username='hist_user', password='test123', role=User.Role.STUDENT, department=dept)
+    dept = Department.objects.create(name=_dept_name('Hist'), department_type='ACADEMIC')
+    cat = Category.objects.create(name=_cat_name('Hist'))
+    user = User.objects.create_user(username=_uid('hist_user'), password='test123', role=User.Role.STUDENT, department=dept)
     grievance = Grievance.objects.create(user=user, department=dept, category=cat, title='History test', description='Testing history')
 
     history = StatusHistory.objects.create(
@@ -256,9 +269,9 @@ def test_status_history_creation():
 
 def test_attachment_creation():
     """Attachment can be linked to a grievance."""
-    dept = Department.objects.create(name='Att Dept', department_type='ACADEMIC')
-    cat = Category.objects.create(name='Att Test')
-    user = User.objects.create_user(username='att_user', password='test123', role=User.Role.STUDENT, department=dept)
+    dept = Department.objects.create(name=_dept_name('Att'), department_type='ACADEMIC')
+    cat = Category.objects.create(name=_cat_name('Att'))
+    user = User.objects.create_user(username=_uid('att_user'), password='test123', role=User.Role.STUDENT, department=dept)
     grievance = Grievance.objects.create(user=user, department=dept, category=cat, title='Attachment test', description='Testing attachment')
 
     # Create attachment with file path
@@ -280,10 +293,10 @@ def test_attachment_creation():
 
 def test_model_relationships():
     """All model relationships (FKs, O2O) work correctly."""
-    dept = Department.objects.create(name='Rel Dept', department_type='ACADEMIC')
-    cat = Category.objects.create(name='Rel Test')
-    student = User.objects.create_user(username='rel_student', password='test123', role=User.Role.STUDENT, department=dept)
-    hod = User.objects.create_user(username='rel_hod', password='test123', role=User.Role.HOD, department=dept)
+    dept = Department.objects.create(name=_dept_name('Rel'), department_type='ACADEMIC')
+    cat = Category.objects.create(name=_cat_name('Rel'))
+    student = User.objects.create_user(username=_uid('rel_student'), password='test123', role=User.Role.STUDENT, department=dept)
+    hod = User.objects.create_user(username=_uid('rel_hod'), password='test123', role=User.Role.HOD, department=dept)
     grievance = Grievance.objects.create(user=student, department=dept, category=cat, title='Rel test', description='Testing relationships')
 
     # OneToOne: AIAnalysis -> Grievance

@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from .models import Department
+
 User = get_user_model()
 
 
@@ -21,15 +23,24 @@ class UserSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password2 = serializers.CharField(write_only=True, min_length=8)
+    email = serializers.EmailField(required=True)
+    first_name = serializers.CharField(required=True)
+    last_name = serializers.CharField(required=True)
+    role = serializers.ChoiceField(
+        choices=[(User.Role.STUDENT, 'Student'), (User.Role.STAFF, 'Staff')],
+        required=True,
+    )
+    department = serializers.PrimaryKeyRelatedField(
+        queryset=Department.objects.all(), required=True,
+    )
+    contact_number = serializers.CharField(required=True)
 
     class Meta:
         model = User
         fields = [
             'username', 'email', 'password', 'password2',
-            'first_name', 'last_name', 'department',
+            'first_name', 'last_name', 'role', 'department', 'contact_number',
         ]
-        # 'role' is intentionally omitted — new users always register as 'STUDENT'.
-        # Role upgrades (Staff, HOD, Campus Admin) are handled by Campus Admin.
 
     def validate(self, attrs):
         if attrs['password'] != attrs.pop('password2'):
@@ -38,7 +49,6 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password')
-        validated_data.setdefault('role', User.Role.STUDENT)
         user = User(**validated_data)
         user.set_password(password)
         user.save()
