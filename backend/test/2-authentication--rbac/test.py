@@ -10,6 +10,7 @@ Usage:
 """
 
 import sys
+import uuid
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
@@ -34,8 +35,12 @@ def setup_db():
     call_command('migrate', verbosity=0, interactive=False, run_syncdb=True)
 
 
-def _create_dept(name='Test Dept'):
-    return Department.objects.create(name=name, department_type='ACADEMIC')
+def _uid(prefix):
+    return f'{prefix}_{uuid.uuid4().hex[:6]}'
+
+
+def _create_dept():
+    return Department.objects.create(name=f'Test Dept {uuid.uuid4().hex[:8]}', department_type='ACADEMIC')
 
 
 def _create_user(username, role='STUDENT', dept=None, password='testpass123'):
@@ -54,21 +59,24 @@ def test_register_creates_user():
     """POST /api/auth/register/ creates a new STUDENT user."""
     dept = _create_dept()
     client = APIClient()
+    uname = _uid('newstudent')
     data = {
-        'username': 'newstudent',
-        'email': 'newstudent@college.edu',
+        'username': uname,
+        'email': f'{uname}@college.edu',
         'password': 'strongpass123',
         'password2': 'strongpass123',
         'first_name': 'New',
         'last_name': 'Student',
+        'role': 'STUDENT',
+        'contact_number': '9800000000',
         'department': dept.pk,
     }
     resp = client.post('/api/auth/register/', data, format='json')
     assert resp.status_code == status.HTTP_201_CREATED, f"Got {resp.status_code}: {resp.data}"
-    assert resp.data['username'] == 'newstudent'
+    assert resp.data['username'] == uname
     assert resp.data['role'] == 'STUDENT'
     assert 'password' not in resp.data
-    User.objects.filter(username='newstudent').delete()
+    User.objects.filter(username=uname).delete()
     dept.delete()
     print("  PASS register creates user")
 
@@ -83,6 +91,9 @@ def test_register_password_mismatch():
         'password2': 'differentpass456',
         'first_name': 'Mismatch',
         'last_name': 'User',
+        'role': 'STUDENT',
+        'contact_number': '9800000000',
+        'department': 1,
     }
     resp = client.post('/api/auth/register/', data, format='json')
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
@@ -92,15 +103,16 @@ def test_register_password_mismatch():
 def test_login_returns_tokens():
     """POST /api/auth/login/ returns JWT access and refresh tokens."""
     dept = _create_dept()
-    _create_user('logintest', dept=dept)
+    uname = _uid('logintest')
+    _create_user(uname, dept=dept)
     client = APIClient()
     resp = client.post('/api/auth/login/', {
-        'username': 'logintest', 'password': 'testpass123',
+        'username': uname, 'password': 'testpass123',
     }, format='json')
     assert resp.status_code == status.HTTP_200_OK, f"Got {resp.status_code}: {resp.data}"
     assert 'access' in resp.data
     assert 'refresh' in resp.data
-    User.objects.filter(username='logintest').delete()
+    User.objects.filter(username=uname).delete()
     dept.delete()
     print("  PASS login returns tokens")
 
@@ -108,13 +120,14 @@ def test_login_returns_tokens():
 def test_login_invalid_credentials():
     """Login fails with wrong password."""
     dept = _create_dept()
-    _create_user('badlogin', dept=dept)
+    uname = _uid('badlogin')
+    _create_user(uname, dept=dept)
     client = APIClient()
     resp = client.post('/api/auth/login/', {
-        'username': 'badlogin', 'password': 'wrongpassword',
+        'username': uname, 'password': 'wrongpassword',
     }, format='json')
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
-    User.objects.filter(username='badlogin').delete()
+    User.objects.filter(username=uname).delete()
     dept.delete()
     print("  PASS login invalid credentials")
 
@@ -122,17 +135,18 @@ def test_login_invalid_credentials():
 def test_token_refresh():
     """POST /api/auth/token/refresh/ returns a new access token."""
     dept = _create_dept()
-    _create_user('refreshtest', dept=dept)
+    uname = _uid('refreshtest')
+    _create_user(uname, dept=dept)
     client = APIClient()
     login_resp = client.post('/api/auth/login/', {
-        'username': 'refreshtest', 'password': 'testpass123',
+        'username': uname, 'password': 'testpass123',
     }, format='json')
     resp = client.post('/api/auth/token/refresh/', {
         'refresh': login_resp.data['refresh'],
     }, format='json')
     assert resp.status_code == status.HTTP_200_OK
     assert 'access' in resp.data
-    User.objects.filter(username='refreshtest').delete()
+    User.objects.filter(username=uname).delete()
     dept.delete()
     print("  PASS token refresh")
 
@@ -140,16 +154,17 @@ def test_token_refresh():
 def test_get_profile_authenticated():
     """GET /api/auth/me/ returns the authenticated user."""
     dept = _create_dept()
-    _create_user('profiletest', dept=dept)
+    uname = _uid('profiletest')
+    _create_user(uname, dept=dept)
     client = APIClient()
     login_resp = client.post('/api/auth/login/', {
-        'username': 'profiletest', 'password': 'testpass123',
+        'username': uname, 'password': 'testpass123',
     }, format='json')
     client.credentials(HTTP_AUTHORIZATION=f'Bearer {login_resp.data["access"]}')
     resp = client.get('/api/auth/me/')
     assert resp.status_code == status.HTTP_200_OK
-    assert resp.data['username'] == 'profiletest'
-    User.objects.filter(username='profiletest').delete()
+    assert resp.data['username'] == uname
+    User.objects.filter(username=uname).delete()
     dept.delete()
     print("  PASS get profile (authenticated)")
 
@@ -165,16 +180,17 @@ def test_get_profile_unauthenticated():
 def test_patch_profile():
     """PATCH /api/auth/me/ updates profile fields."""
     dept = _create_dept()
-    _create_user('patchtest', dept=dept)
+    uname = _uid('patchtest')
+    _create_user(uname, dept=dept)
     client = APIClient()
     login_resp = client.post('/api/auth/login/', {
-        'username': 'patchtest', 'password': 'testpass123',
+        'username': uname, 'password': 'testpass123',
     }, format='json')
     client.credentials(HTTP_AUTHORIZATION=f'Bearer {login_resp.data["access"]}')
     resp = client.patch('/api/auth/me/', {'first_name': 'Patched'}, format='json')
     assert resp.status_code == status.HTTP_200_OK
     assert resp.data['first_name'] == 'Patched'
-    User.objects.filter(username='patchtest').delete()
+    User.objects.filter(username=uname).delete()
     dept.delete()
     print("  PASS patch profile")
 
@@ -182,19 +198,20 @@ def test_patch_profile():
 def test_password_reset_flow():
     """Full password reset flow works (request -> confirm -> login with new password)."""
     dept = _create_dept()
-    _create_user('resetuser', dept=dept)
+    uname = _uid('resetuser')
+    _create_user(uname, dept=dept)
     client = APIClient()
 
     # Step 1: Request reset
     req_resp = client.post('/api/auth/password-reset/', {
-        'email': 'resetuser@college.edu',
+        'email': f'{uname}@college.edu',
     }, format='json')
     assert req_resp.status_code == status.HTTP_200_OK
     assert 'dev_token' in req_resp.data
 
     # Step 2: Confirm with token
     confirm_resp = client.post('/api/auth/password-reset/confirm/', {
-        'email': 'resetuser@college.edu',
+        'email': f'{uname}@college.edu',
         'token': req_resp.data['dev_token'],
         'password': 'newpassword456',
         'password2': 'newpassword456',
@@ -203,11 +220,11 @@ def test_password_reset_flow():
 
     # Step 3: Login with new password
     login_resp = client.post('/api/auth/login/', {
-        'username': 'resetuser', 'password': 'newpassword456',
+        'username': uname, 'password': 'newpassword456',
     }, format='json')
     assert login_resp.status_code == status.HTTP_200_OK
 
-    User.objects.filter(username='resetuser').delete()
+    User.objects.filter(username=uname).delete()
     dept.delete()
     print("  PASS password reset flow")
 
@@ -215,32 +232,34 @@ def test_password_reset_flow():
 def test_student_denied_admin():
     """Student cannot access admin-level views."""
     dept = _create_dept()
-    _create_user('student_admin', dept=dept)
+    uname = _uid('student_admin')
+    _create_user(uname, dept=dept)
     client = APIClient()
     login_resp = client.post('/api/auth/login/', {
-        'username': 'student_admin', 'password': 'testpass123',
+        'username': uname, 'password': 'testpass123',
     }, format='json')
     client.credentials(HTTP_AUTHORIZATION=f'Bearer {login_resp.data["access"]}')
     resp = client.get('/api/admin/spam-queue/')
     assert resp.status_code == status.HTTP_403_FORBIDDEN, \
         f"Student should get 403, got {resp.status_code}"
-    User.objects.filter(username='student_admin').delete()
+    User.objects.filter(username=uname).delete()
     dept.delete()
     print("  PASS student denied admin access")
 
 
 def test_admin_can_access_spam_queue():
     """Campus Admin can access the spam queue."""
-    admin = _create_user('admin_test', role='CAMPUS_ADMIN', password='adminpass123')
+    uname = _uid('admin_test')
+    _create_user(uname, role='CAMPUS_ADMIN', password='adminpass123')
     client = APIClient()
     login_resp = client.post('/api/auth/login/', {
-        'username': 'admin_test', 'password': 'adminpass123',
+        'username': uname, 'password': 'adminpass123',
     }, format='json')
     client.credentials(HTTP_AUTHORIZATION=f'Bearer {login_resp.data["access"]}')
     resp = client.get('/api/admin/spam-queue/')
     assert resp.status_code == status.HTTP_200_OK, \
         f"Admin should get 200, got {resp.status_code}"
-    User.objects.filter(username='admin_test').delete()
+    User.objects.filter(username=uname).delete()
     print("  PASS admin can access spam queue")
 
 

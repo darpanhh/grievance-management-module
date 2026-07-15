@@ -17,7 +17,8 @@ User = get_user_model()
 class RegisterView(generics.CreateAPIView):
     """
     POST /api/auth/register/
-    Creates a new user account with STUDENT role (default).
+    Creates a new user account. Students and Staff can self-register.
+    Default role is STUDENT; Staff must provide a department.
     """
     queryset = User.objects.all()
     serializer_class = RegisterSerializer

@@ -6,6 +6,7 @@ This project is being developed as part of our academic project for the Departme
 
 ## Features
 
+- Self-registration for Students and Staff (with department)
 - Secure, role-based login for Student, Staff, HOD, and Campus Admin
 - Grievance submission, including a fully anonymous option
 - AI-based spam filtering for submitted grievances
