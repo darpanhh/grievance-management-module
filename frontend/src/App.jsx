@@ -1,121 +1,89 @@
-import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider } from './contexts/AuthContext'
+import Navbar from './components/Navbar'
+import ProtectedRoute from './components/ProtectedRoute'
+import Login from './pages/Login'
 import './App.css'
 
-function App() {
-  const [status, setStatus] = useState({
-    loading: true,
-    backendHealthy: false,
-    dbStatus: 'disconnected',
-    backendMessage: '',
-    error: null
-  });
-
-  const checkStatus = () => {
-    setStatus(prev => ({ ...prev, loading: true, error: null }));
-    axios.get('http://localhost:8000/api/status/')
-      .then(res => {
-        setStatus({
-          loading: false,
-          backendHealthy: res.data.status === 'healthy',
-          dbStatus: res.data.database,
-          backendMessage: res.data.message,
-          error: null
-        });
-      })
-      .catch(err => {
-        setStatus({
-          loading: false,
-          backendHealthy: false,
-          dbStatus: 'disconnected (Backend unreachable)',
-          backendMessage: 'Failed to connect to the backend server.',
-          error: err.message
-        });
-      });
-  };
-
-  useEffect(() => {
-    checkStatus();
-  }, []);
-
+function Home() {
   return (
     <div className="launchpad-container">
       <header className="launchpad-header">
         <div className="logo-badge">GMS</div>
         <h1>Grievance Management System</h1>
-        <p className="subtitle">System Launchpad & Connection Dashboard</p>
+        <p className="subtitle">Pulchowk Campus &mdash; Department of Electronics and Computer Engineering</p>
       </header>
-
-      <main className="launchpad-main">
-        <section className="status-grid">
-          {/* Django Backend Status Card */}
-          <div className={`status-card ${status.backendHealthy ? 'healthy' : 'unhealthy'}`}>
-            <div className="card-header">
-              <h3>Django Backend API</h3>
-              <span className={`badge ${status.backendHealthy ? 'success' : 'danger'}`}>
-                {status.loading ? 'Checking...' : status.backendHealthy ? 'HEALTHY' : 'DOWN'}
-              </span>
-            </div>
-            <p className="card-desc">Python-based REST API service orchestrating business logic and routing.</p>
-            <div className="card-details">
-              <strong>URL:</strong> <code>http://localhost:8000/api/status/</code>
-            </div>
-          </div>
-
-          {/* PostgreSQL DB Status Card */}
-          <div className={`status-card ${status.dbStatus.includes('connected') && !status.dbStatus.includes('disconnected') ? 'healthy' : 'unhealthy'}`}>
-            <div className="card-header">
-              <h3>PostgreSQL Database</h3>
-              <span className={`badge ${status.dbStatus.includes('connected') && !status.dbStatus.includes('disconnected') ? 'success' : 'danger'}`}>
-                {status.loading ? 'Checking...' : (status.dbStatus.includes('connected') && !status.dbStatus.includes('disconnected') ? 'CONNECTED' : 'DISCONNECTED')}
-              </span>
-            </div>
-            <p className="card-desc">Relational database storing user records, grievances, responses, and histories.</p>
-            <div className="card-details">
-              <strong>Status:</strong> <code>{status.loading ? 'Fetching...' : status.dbStatus}</code>
-            </div>
-          </div>
-        </section>
-
-        <div className="action-row">
-          <button className="btn-refresh" onClick={checkStatus} disabled={status.loading}>
-            {status.loading ? 'Re-checking...' : 'Refresh Status'}
-          </button>
-        </div>
-
-        <section className="info-section">
-          <h2>Project Architecture</h2>
-          <div className="arch-list">
-            <div className="arch-item">
-              <span className="folder-icon">📂</span>
-              <div className="arch-text">
-                <h4>backend/</h4>
-                <p>Django REST project. Launch server with <code>venv\Scripts\python.exe manage.py runserver</code></p>
-              </div>
-            </div>
-            <div className="arch-item">
-              <span className="folder-icon">📂</span>
-              <div className="arch-text">
-                <h4>frontend/</h4>
-                <p>React + Vite single-page application. Run dev server with <code>npm run dev</code></p>
-              </div>
-            </div>
-            <div className="arch-item">
-              <span className="folder-icon">🐳</span>
-              <div className="arch-text">
-                <h4>Docker Compose</h4>
-                <p>Runs PostgreSQL. Start container with <code>docker compose up -d</code></p>
-              </div>
-            </div>
-          </div>
-        </section>
+      <main className="launchpad-main" style={{ textAlign: 'center' }}>
+        <p style={{ color: '#94a3b8', fontSize: '1.1rem', marginBottom: '2rem' }}>
+          A platform for students and staff to submit, track, and resolve grievances.
+        </p>
+        <a href="/login" className="btn-primary" style={{ display: 'inline-block', textDecoration: 'none' }}>
+          Get Started
+        </a>
       </main>
-
-      <footer className="launchpad-footer">
-        <p>Grievance Management System (GMS) &bull; Version 2.0 Project Setup</p>
-      </footer>
     </div>
   )
 }
 
-export default App
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <div className="app-layout">
+          <Navbar />
+          <main className="app-main">
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={
+                <div className="coming-soon"><h2>Register</h2><p>Registration page coming soon.</p></div>
+              } />
+              <Route path="/password-reset" element={
+                <div className="coming-soon"><h2>Password Reset</h2><p>Password reset page coming soon.</p></div>
+              } />
+              <Route path="/grievances/new" element={
+                <ProtectedRoute roles={['STUDENT', 'STAFF']}>
+                  <div className="coming-soon"><h2>Submit Grievance</h2><p>Submission form coming soon.</p></div>
+                </ProtectedRoute>
+              } />
+              <Route path="/grievances/track" element={
+                <div className="coming-soon"><h2>Track Grievance</h2><p>Anonymous tracking page coming soon.</p></div>
+              } />
+              <Route path="/grievances/:id" element={
+                <ProtectedRoute roles={['STUDENT', 'STAFF', 'HOD', 'CAMPUS_ADMIN']}>
+                  <div className="coming-soon"><h2>Grievance Detail</h2><p>Detail page coming soon.</p></div>
+                </ProtectedRoute>
+              } />
+              <Route path="/dashboard/student" element={
+                <ProtectedRoute roles={['STUDENT']}>
+                  <div className="coming-soon"><h2>Student Dashboard</h2><p>Dashboard coming soon.</p></div>
+                </ProtectedRoute>
+              } />
+              <Route path="/dashboard/department" element={
+                <ProtectedRoute roles={['HOD', 'STAFF']}>
+                  <div className="coming-soon"><h2>Department Dashboard</h2><p>Dashboard coming soon.</p></div>
+                </ProtectedRoute>
+              } />
+              <Route path="/dashboard/admin" element={
+                <ProtectedRoute roles={['CAMPUS_ADMIN']}>
+                  <div className="coming-soon"><h2>Admin Dashboard</h2><p>Dashboard coming soon.</p></div>
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/spam-queue" element={
+                <ProtectedRoute roles={['CAMPUS_ADMIN']}>
+                  <div className="coming-soon"><h2>Spam Queue</h2><p>Spam queue management coming soon.</p></div>
+                </ProtectedRoute>
+              } />
+              <Route path="/reports" element={
+                <ProtectedRoute roles={['CAMPUS_ADMIN']}>
+                  <div className="coming-soon"><h2>Reports</h2><p>Export reports page coming soon.</p></div>
+                </ProtectedRoute>
+              } />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+        </div>
+      </AuthProvider>
+    </BrowserRouter>
+  )
+}
