@@ -412,18 +412,15 @@ class SpamDetectorInterface:
         """Return {spam_prediction: bool, confidence_score: float, reason: str}"""
         raise NotImplementedError
 
-class KeywordSpamDetector(SpamDetectorInterface):
-    """Initial implementation using keyword heuristics."""
-    SPAM_KEYWORDS = ["buy now", "click here", "free money", ...]
-    MIN_LENGTH = 10
-    MAX_LENGTH = 5000
-
 class MLSpamDetector(SpamDetectorInterface):
-    """Future ML-based implementation using scikit-learn or HuggingFace."""
-    # Load pre-trained model and tokenizer
+    """ML-based implementation using scikit-learn (TF-IDF + classifier).
+
+    Text preprocessing: NLTK tokenisation, stopword removal, Porter stemming.
+    Model files (model.pkl, vectorizer.pkl) live in services/models/.
+    """
 ```
 
-The interface is dependency-injected so it can be swapped via settings without touching business logic (NFR-26).
+The interface is dependency-injected so it can be swapped via settings without touching business logic (NFR-26). The `MLSpamDetector` is currently the active implementation; a fallback `KeywordSpamDetector` also exists in the source.
 
 #### 5.1.2 Integration into Submission Pipeline
 
