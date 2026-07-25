@@ -73,8 +73,7 @@
 | Component | Status |
 |-----------|--------|
 | `grievances/services/spam_detector.py` | ✅ Done |
-| SpamDetectorInterface (Strategy pattern) | ✅ Done |
-| KeywordSpamDetector (initial implementation) | ✅ Done |
+| MLSpamDetector (model training and implementation) | ✅ Done |
 | Spam detection integrated into submission pipeline | ✅ Done |
 | `GET /api/admin/spam-queue/` | ✅ Done |
 | `POST /api/admin/spam-queue/{id}/reinstate/` | ✅ Done |

@@ -1,121 +1,119 @@
-import { useState, useEffect } from 'react'
-import axios from 'axios'
-import './App.css'
+import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import Navbar from './components/Navbar';
+import ProtectedRoute from './components/ProtectedRoute';
+import Landing from './pages/Landing';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import PasswordReset from './pages/PasswordReset';
+import SubmitGrievance from './pages/SubmitGrievance';
+import TrackGrievance from './pages/TrackGrievance';
+import StudentDashboard from './pages/StudentDashboard';
+import GrievanceDetail from './pages/GrievanceDetail';
+import DepartmentDashboard from './pages/DepartmentDashboard';
+import AdminDashboard from './pages/AdminDashboard';
+import './App.css';
+
+// Automatic redirect handler for /dashboard based on logged in user's role
+const DashboardRedirect = () => {
+  const { user } = useAuth();
+  const role = (user?.role || '').toUpperCase();
+
+  if (role === 'STUDENT' || role === 'STAFF') {
+    return <Navigate to="/dashboard/student" replace />;
+  } else if (role === 'HOD' || role === 'DEPARTMENT_ADMIN') {
+    return <Navigate to="/dashboard/department" replace />;
+  } else if (role === 'CAMPUS_ADMIN' || role === 'ADMIN' || role === 'SUPER_ADMIN') {
+    return <Navigate to="/dashboard/admin" replace />;
+  }
+
+  return <Navigate to="/dashboard/student" replace />;
+};
+
+const NotFoundPlaceholder = () => (
+  <div className="placeholder-page">
+    <div className="placeholder-card error-card">
+      <div className="placeholder-badge danger">404 Error</div>
+      <h2>Page Not Found</h2>
+      <p>The requested IOE Pulchowk portal route does not exist.</p>
+      <Link to="/" className="btn btn-primary">Go to Home</Link>
+    </div>
+  </div>
+);
 
 function App() {
-  const [status, setStatus] = useState({
-    loading: true,
-    backendHealthy: false,
-    dbStatus: 'disconnected',
-    backendMessage: '',
-    error: null
-  });
-
-  const checkStatus = () => {
-    setStatus(prev => ({ ...prev, loading: true, error: null }));
-    axios.get('http://localhost:8000/api/status/')
-      .then(res => {
-        setStatus({
-          loading: false,
-          backendHealthy: res.data.status === 'healthy',
-          dbStatus: res.data.database,
-          backendMessage: res.data.message,
-          error: null
-        });
-      })
-      .catch(err => {
-        setStatus({
-          loading: false,
-          backendHealthy: false,
-          dbStatus: 'disconnected (Backend unreachable)',
-          backendMessage: 'Failed to connect to the backend server.',
-          error: err.message
-        });
-      });
-  };
-
-  useEffect(() => {
-    checkStatus();
-  }, []);
-
   return (
-    <div className="launchpad-container">
-      <header className="launchpad-header">
-        <div className="logo-badge">GMS</div>
-        <h1>Grievance Management System</h1>
-        <p className="subtitle">System Launchpad & Connection Dashboard</p>
-      </header>
+    <BrowserRouter>
+      <AuthProvider>
+        <div className="app-layout">
+          <Navbar />
+          <main className="app-main">
+            <Routes>
+              {/* Public Routes */}
+              <Route path="/" element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/password-reset" element={<PasswordReset />} />
+              <Route path="/grievances/track" element={<TrackGrievance />} />
+              <Route path="/track" element={<Navigate to="/grievances/track" replace />} />
 
-      <main className="launchpad-main">
-        <section className="status-grid">
-          {/* Django Backend Status Card */}
-          <div className={`status-card ${status.backendHealthy ? 'healthy' : 'unhealthy'}`}>
-            <div className="card-header">
-              <h3>Django Backend API</h3>
-              <span className={`badge ${status.backendHealthy ? 'success' : 'danger'}`}>
-                {status.loading ? 'Checking...' : status.backendHealthy ? 'HEALTHY' : 'DOWN'}
-              </span>
-            </div>
-            <p className="card-desc">Python-based REST API service orchestrating business logic and routing.</p>
-            <div className="card-details">
-              <strong>URL:</strong> <code>http://localhost:8000/api/status/</code>
-            </div>
-          </div>
+              {/* Protected Routes */}
+              <Route
+                path="/grievances/new"
+                element={
+                  <ProtectedRoute allowedRoles={['STUDENT', 'STAFF']}>
+                    <SubmitGrievance />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/submit" element={<Navigate to="/grievances/new" replace />} />
+              <Route path="/grievances/:id" element={<ProtectedRoute><GrievanceDetail /></ProtectedRoute>} />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <DashboardRedirect />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/student"
+                element={
+                  <ProtectedRoute allowedRoles={['STUDENT', 'STAFF']}>
+                    <StudentDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/department"
+                element={
+                  <ProtectedRoute allowedRoles={['HOD']}>
+                    <DepartmentDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/admin"
+                element={
+                  <ProtectedRoute allowedRoles={['CAMPUS_ADMIN']}>
+                    <AdminDashboard />
+                  </ProtectedRoute>
+                }
+              />
 
-          {/* PostgreSQL DB Status Card */}
-          <div className={`status-card ${status.dbStatus.includes('connected') && !status.dbStatus.includes('disconnected') ? 'healthy' : 'unhealthy'}`}>
-            <div className="card-header">
-              <h3>PostgreSQL Database</h3>
-              <span className={`badge ${status.dbStatus.includes('connected') && !status.dbStatus.includes('disconnected') ? 'success' : 'danger'}`}>
-                {status.loading ? 'Checking...' : (status.dbStatus.includes('connected') && !status.dbStatus.includes('disconnected') ? 'CONNECTED' : 'DISCONNECTED')}
-              </span>
-            </div>
-            <p className="card-desc">Relational database storing user records, grievances, responses, and histories.</p>
-            <div className="card-details">
-              <strong>Status:</strong> <code>{status.loading ? 'Fetching...' : status.dbStatus}</code>
-            </div>
-          </div>
-        </section>
-
-        <div className="action-row">
-          <button className="btn-refresh" onClick={checkStatus} disabled={status.loading}>
-            {status.loading ? 'Re-checking...' : 'Refresh Status'}
-          </button>
+              {/* 404 Catch-All */}
+              <Route path="*" element={<NotFoundPlaceholder />} />
+            </Routes>
+          </main>
+          <footer className="app-footer">
+            <p>
+              IOE Pulchowk Campus Grievance Portal &bull; Institute of Engineering, Tribhuvan University © 2026
+            </p>
+          </footer>
         </div>
-
-        <section className="info-section">
-          <h2>Project Architecture</h2>
-          <div className="arch-list">
-            <div className="arch-item">
-              <span className="folder-icon">📂</span>
-              <div className="arch-text">
-                <h4>backend/</h4>
-                <p>Django REST project. Launch server with <code>venv\Scripts\python.exe manage.py runserver</code></p>
-              </div>
-            </div>
-            <div className="arch-item">
-              <span className="folder-icon">📂</span>
-              <div className="arch-text">
-                <h4>frontend/</h4>
-                <p>React + Vite single-page application. Run dev server with <code>npm run dev</code></p>
-              </div>
-            </div>
-            <div className="arch-item">
-              <span className="folder-icon">🐳</span>
-              <div className="arch-text">
-                <h4>Docker Compose</h4>
-                <p>Runs PostgreSQL. Start container with <code>docker compose up -d</code></p>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      <footer className="launchpad-footer">
-        <p>Grievance Management System (GMS) &bull; Version 2.0 Project Setup</p>
-      </footer>
-    </div>
-  )
+      </AuthProvider>
+    </BrowserRouter>
+  );
 }
 
-export default App
+export default App;
