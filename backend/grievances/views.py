@@ -32,7 +32,7 @@ from .serializers import (
     GrievanceListSerializer,
     GrievanceTrackSerializer,
 )
-from .services.spam_detector import KeywordSpamDetector
+from .services.spam_detector import MLSpamDetector
 from .services.routing import route_grievance
 
 
@@ -76,8 +76,8 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
     POST /api/grievances/      — Submit a new grievance
 
     Role-based scoping for list queries:
-      - STUDENT:     Own grievances only
-      - STAFF/HOD:   Grievances in the user's department
+      - STUDENT/STAFF:     Own grievances only
+      - HOD:   Grievances in the user's department
       - CAMPUS_ADMIN: All grievances
 
     Rate limiting (POST only):
@@ -107,9 +107,9 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
             'category', 'department', 'user'
         )
 
-        if user.role == 'STUDENT':
+        if user.role == 'STUDENT' or user.role == 'STAFF':
             qs = qs.filter(user=user)
-        elif user.role in ('STAFF', 'HOD'):
+        elif user.role == 'HOD':
             qs = qs.filter(department=user.department)
         # CAMPUS_ADMIN sees everything — no additional filter
 
@@ -166,7 +166,7 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
         # ------------------------------------------------------------------
         # Phase 4 — AI Spam Detection
         # ------------------------------------------------------------------
-        detector = KeywordSpamDetector()
+        detector = MLSpamDetector()
         result = detector.analyze(grievance.description)
 
         # Persist the AI analysis record

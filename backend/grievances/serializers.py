@@ -150,8 +150,8 @@ class GrievanceCreateSerializer(serializers.ModelSerializer):
     def validate_description(self, value):
         """Description must be between 10 and 5000 characters."""
         value = value.strip()
-        if len(value) < 10:
-            raise serializers.ValidationError('Description must be at least 10 characters.')
+        if len(value) < 5:
+            raise serializers.ValidationError('Description must be at least 5 characters.')
         if len(value) > 5000:
             raise serializers.ValidationError('Description must not exceed 5000 characters.')
         return value

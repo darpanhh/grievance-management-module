@@ -8,8 +8,18 @@ Phase 4 — AI Spam Filtering
 SRS Reference: §3.4 (FR-14–FR-18), §4.6 (NFR-26)
 """
 
+import pickle
 import re
+import warnings
 from abc import ABC, abstractmethod
+from pathlib import Path
+
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
+
+warnings.filterwarnings('ignore', message='.*InconsistentVersionWarning.*')
+warnings.filterwarnings('ignore', message='Trying to unpickle estimator.*')
 
 
 class SpamDetectorInterface(ABC):
@@ -34,127 +44,187 @@ class SpamDetectorInterface(ABC):
         ...
 
 
-class KeywordSpamDetector(SpamDetectorInterface):
+# ---------------------------------------------------------------------------
+# NLTK and Emoji text preprocessing — exactly matching the Jupyter Notebook pipeline
+# ---------------------------------------------------------------------------
+
+import emoji
+from nltk.tokenize import word_tokenize
+
+_ps = PorterStemmer()
+
+# Preserve negations because they change meaning
+NEGATIONS = {
+    "no",
+    "not",
+    "nor",
+    "never",
+    "cannot",
+    "without"
+}
+
+_stop_words = set(stopwords.words("english")) - NEGATIONS
+
+# Compiled Regular Expressions matching the notebook
+URL_RE = re.compile(r"https?://\S+|www\.\S+")
+EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+PHONE_RE = re.compile(r"\b(?:\+?\d{1,3}[-.\s]?)?(?:\d{10}|\d{3}[-.\s]?\d{3}[-.\s]?\d{4})\b")
+HTML_RE = re.compile(r"<.*?>")
+MENTION_RE = re.compile(r"@\w+")
+HASHTAG_RE = re.compile(r"#(\w+)")
+NON_ALNUM_RE = re.compile(r"[^a-z0-9\s]")
+MULTISPACE_RE = re.compile(r"\s+")
+REPEAT_RE = re.compile(r"(.)\1{2,}")
+
+CONTRACTIONS = {
+    "can't": "cannot",
+    "won't": "will not",
+    "n't": " not",
+    "'re": " are",
+    "'ve": " have",
+    "'ll": " will",
+    "'d": " would",
+    "'m": " am",
+    "'s": ""
+}
+
+
+def expand_contractions(text: str) -> str:
+    """Expand common English contractions."""
+    for key, value in CONTRACTIONS.items():
+        text = text.replace(key, value)
+    return text
+
+
+def _transform_text(text: str) -> str:
     """
-    Heuristic-based spam detector that checks for known spam patterns,
-    keyword density, and length heuristics.
-
-    This is the initial implementation; it can be replaced with an ML-based
-    detector later (e.g. scikit-learn / HuggingFace) without changing any
-    view or business-logic code — the interface is the contract.
-
-    Spam indicators (weighted):
-      - Presence of commercial spam keywords
-      - Excessive repetition of characters or words
-      - Description length anomalies (too short / too long)
-      - All-caps / SHOUTING content
-      - High link-to-text ratio
+    Text preprocessing optimized for University Grievance Spam Detection.
+    Matches the exact logic used in the Jupyter Notebook training pipeline.
     """
+    if not isinstance(text, str):
+        return ""
 
-    # Commercial / promotional spam keywords with weight multipliers
-    SPAM_KEYWORDS = [
-        (r'\bbuy\s+now\b', 0.25),
-        (r'\bclick\s+here\b', 0.20),
-        (r'\bfree\s+money\b', 0.30),
-        (r'\bwin\s+(?:prize|money|cash)\b', 0.30),
-        (r'\blimited\s+time\s+offer\b', 0.25),
-        (r'\bact\s+now\b', 0.15),
-        (r'\bregister\s+(?:today|now|online)\b', 0.15),
-        (r'\bearn\s+money\b', 0.25),
-        (r'\bwork\s+from\s+home\b', 0.15),
-        (r'\bget\s+rich\b', 0.30),
-        (r'\binvestment\s+opportunity\b', 0.20),
-        (r'\bdon\'?t\s+miss\s+out\b', 0.15),
-        (r'\bexclusive\s+offer\b', 0.20),
-        (r'\bcongratulations\s+(?:you\s+)?(?:have\s+)?won\b', 0.30),
-        (r'\bclaim\s+your\s+(?:prize|reward|bonus)\b', 0.30),
-        (r'\bno\s+cost\b', 0.15),
-        (r'\bgift\s+card\b', 0.15),
-        (r'\bfor\s+only\s+\$\d+\b', 0.20),
-        (r'\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b', 0.10),  # email harvesting
-        (r'\bhttp[s]?://\S+\b', 0.10),  # promotional URLs
-    ]
+    text = text.strip()
 
-    # Characters whose repetition suggests spam
-    REPETITION_PATTERN = re.compile(r'(.)\1{4,}')
-    # All-caps word threshold
-    ALL_CAPS_THRESHOLD = 0.40  # if 40%+ of alphabetic chars are uppercase
-    # Minimum reasonable description length
-    MIN_DESCRIPTION_LENGTH = 10
-    MAX_DESCRIPTION_LENGTH = 5000
+    if not text:
+        return ""
+
+    # Remove HTML
+    text = HTML_RE.sub(" ", text)
+
+    # Lowercase
+    text = text.lower()
+
+    # Expand contractions
+    text = expand_contractions(text)
+
+    # Replace URLs, Emails and Phone Numbers
+    text = URL_RE.sub(" urltoken ", text)
+    text = EMAIL_RE.sub(" emailtoken ", text)
+    text = PHONE_RE.sub(" phonetoken ", text)
+
+    # Remove mentions
+    text = MENTION_RE.sub(" ", text)
+
+    # Keep hashtag words
+    text = HASHTAG_RE.sub(r" \1 ", text)
+
+    # Convert emojis into words
+    text = emoji.demojize(text, delimiters=(" ", " "))
+    text = text.replace("_", " ")
+
+    # Normalize repeated characters
+    text = REPEAT_RE.sub(r"\1\1", text)
+
+    # Remove punctuation, keep numbers
+    text = NON_ALNUM_RE.sub(" ", text)
+
+    # Remove extra spaces
+    text = MULTISPACE_RE.sub(" ", text).strip()
+
+    # Tokenize
+    tokens = word_tokenize(text)
+
+    cleaned = []
+
+    SPECIAL_TOKENS = {
+        "urltoken",
+        "emailtoken",
+        "phonetoken"
+    }
+
+    for token in tokens:
+        # Preserve placeholders
+        if token in SPECIAL_TOKENS:
+            cleaned.append(token)
+            continue
+
+        # Remove stopwords except negations
+        if token in _stop_words:
+            continue
+
+        # Remove single alphabetic characters
+        if len(token) == 1 and token.isalpha():
+            continue
+
+        # Stem words
+        cleaned.append(_ps.stem(token))
+
+    return " ".join(cleaned)
+
+
+# ---------------------------------------------------------------------------
+# ML-based Spam Detector
+# ---------------------------------------------------------------------------
+
+MODEL_DIR = Path(__file__).resolve().parent / 'models'
+
+
+class MLSpamDetector(SpamDetectorInterface):
+    """
+    Scikit-learn based spam detector using a pre-trained TF-IDF + classifier.
+
+    Loads ``grievance_model.pkl`` from ``services/models/`` on first instantiation.
+    The model is a scikit-learn Pipeline containing both the vectorizer and classifier.
+
+    Text is pre-processed with the same NLTK pipeline (lowercase → tokenise
+    → remove stopwords/punctuation → Porter stem) used during training.
+    """
 
     def __init__(self):
-        self._compiled_keywords = [
-            (re.compile(pattern, re.IGNORECASE), weight)
-            for pattern, weight in self.SPAM_KEYWORDS
-        ]
+        nltk.download('punkt', quiet=True)
+        nltk.download('stopwords', quiet=True)
+        nltk.download('punkt_tab', quiet=True)
+
+        model_path = MODEL_DIR / 'grievance_model.pkl'
+
+        with open(model_path, 'rb') as f:
+            self._pipeline = pickle.load(f)
 
     def analyze(self, text: str) -> dict:
-        """
-        Analyse *text* and return a spam prediction dict.
+        clean = _transform_text(text.strip())
 
-        The confidence score is a float in [0.0, 1.0] built from weighted
-        spam indicators.  A score >= 0.40 triggers a spam classification.
-        """
-        if not text or not text.strip():
+        if not clean:
             return {
                 'spam_prediction': True,
-                'confidence_score': 0.95,
-                'classification_reason': 'Empty or whitespace-only description.',
+                'confidence_score': 0.90,
+                'classification_reason': 'No meaningful content after preprocessing.',
             }
 
-        score = 0.0
-        reasons = []
-        clean = text.strip()
-
-        # --- 1. Keyword matches -------------------------------------------
-        matched_any = False
-        for compiled, weight in self._compiled_keywords:
-            if compiled.search(clean):
-                matched_any = True
-                score += weight
-
-        if matched_any:
-            reasons.append('Contains commercial or promotional language.')
+        # Try predict_proba first for a proper confidence score
+        if hasattr(self._pipeline, 'predict_proba'):
+            proba = self._pipeline.predict_proba([clean])[0]
+            # In binary classification, index 1 corresponds to SPAM (class 1)
+            confidence_score = float(proba[1])
+            spam_prediction = bool(self._pipeline.predict([clean])[0])
         else:
-            # Slight penalty if *nothing* matched — uncommon for legitimate
-            # college grievances to have zero keyword signals
-            pass
+            spam_prediction = bool(self._pipeline.predict([clean])[0])
+            confidence_score = 1.0 if spam_prediction else 0.0
 
-        # --- 2. Length heuristics -----------------------------------------
-        if len(clean) < self.MIN_DESCRIPTION_LENGTH:
-            score += 0.30
-            reasons.append('Description is unusually short.')
-        elif len(clean) > self.MAX_DESCRIPTION_LENGTH:
-            score += 0.10
-            reasons.append('Description is unusually long.')
-
-        # --- 3. Repetitive characters (e.g. "aaaaaa", "!!!!!!") -----------
-        rep_matches = self.REPETITION_PATTERN.findall(clean)
-        if rep_matches:
-            score += 0.10 * min(len(rep_matches), 5)
-            reasons.append('Contains unusual character repetition.')
-
-        # --- 4. All-caps / SHOUTING content --------------------------------
-        alpha_chars = [c for c in clean if c.isalpha()]
-        if alpha_chars:
-            upper_ratio = sum(1 for c in alpha_chars if c.isupper()) / len(alpha_chars)
-            if upper_ratio > self.ALL_CAPS_THRESHOLD:
-                score += 0.15
-                reasons.append(
-                    f'High proportion of uppercase text ({upper_ratio:.0%}).'
-                )
-
-        # --- Final classification ------------------------------------------
-        spam_prediction = score >= 0.40
-
-        # Clamp score to [0.0, 1.0]
-        confidence_score = min(score, 1.0)
-
-        reason = '; '.join(reasons) if reasons else (
+        reason = (
+            'Classified as spam by ML model.'
+            if spam_prediction else
             'No spam indicators detected.'
-            if not spam_prediction else
-            'Classified as spam based on heuristic analysis.'
         )
 
         return {

@@ -273,10 +273,11 @@ REST_FRAMEWORK = {
 
 **`POST /api/auth/register/`**
 
-- Accepts: `email`, `password`, `password2`, `first_name`, `last_name`, `role`, `department_id`
+- Accepts: `email`, `password`, `password2`, `first_name`, `last_name`, `role` (optional, defaults to STUDENT), `department_id` (required for all roles)
 - Validates college-issued credentials (FR-01)
 - Creates User with hashed password
-- Returns JWT tokens
+- Only STUDENT and STAFF roles can self-register; HOD and CAMPUS_ADMIN are assigned by admin
+- Department is required for both Student and Staff registration
 
 **FR-05 (Anonymous Tracking ID):** Not register-time — generated at grievance submission.
 
@@ -411,18 +412,15 @@ class SpamDetectorInterface:
         """Return {spam_prediction: bool, confidence_score: float, reason: str}"""
         raise NotImplementedError
 
-class KeywordSpamDetector(SpamDetectorInterface):
-    """Initial implementation using keyword heuristics."""
-    SPAM_KEYWORDS = ["buy now", "click here", "free money", ...]
-    MIN_LENGTH = 10
-    MAX_LENGTH = 5000
-
 class MLSpamDetector(SpamDetectorInterface):
-    """Future ML-based implementation using scikit-learn or HuggingFace."""
-    # Load pre-trained model and tokenizer
+    """ML-based implementation using scikit-learn (TF-IDF + classifier).
+
+    Text preprocessing: NLTK tokenisation, stopword removal, Porter stemming.
+    Model files (model.pkl, vectorizer.pkl) live in services/models/.
+    """
 ```
 
-The interface is dependency-injected so it can be swapped via settings without touching business logic (NFR-26).
+The interface is dependency-injected so it can be swapped via settings without touching business logic (NFR-26). The `MLSpamDetector` is currently the active implementation; a fallback `KeywordSpamDetector` also exists in the source.
 
 #### 5.1.2 Integration into Submission Pipeline
 
@@ -831,7 +829,7 @@ EMAIL_HOST_PASSWORD=email-password
 
 | Method | Endpoint | Auth | Role | Description |
 |--------|----------|------|------|-------------|
-| POST | `/api/auth/register/` | No | — | User registration (FR-01) |
+| POST | `/api/auth/register/` | No | — | User registration — Students & Staff (FR-01) |
 | POST | `/api/auth/login/` | No | — | Login, returns JWT (FR-02) |
 | POST | `/api/auth/token/refresh/` | No | — | Refresh JWT |
 | POST | `/api/auth/password-reset/` | No | — | Request password reset (FR-06) |
@@ -843,7 +841,7 @@ EMAIL_HOST_PASSWORD=email-password
 | Method | Endpoint | Auth | Role | Description |
 |--------|----------|------|------|-------------|
 | GET    | `/api/grievances/` | Yes | Any (scoped) | List grievances (FR-24) |
-| POST   | `/api/grievances/` | Yes | Student/Staff | Submit grievance (FR-07) |
+| POST   | `/api/grievances/` | Yes | Student, Staff | Submit grievance (FR-07) |
 | GET    | `/api/grievances/{id}/` | Yes | Any (scoped) | Grievance detail (FR-25) |
 | POST   | `/api/grievances/{id}/respond/` | Yes | HOD | Submit official response (FR-26) |
 | POST   | `/api/grievances/{id}/resolve/` | Yes | Submitter | Mark as resolved (FR-36) |

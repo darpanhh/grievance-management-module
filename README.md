@@ -6,6 +6,7 @@ This project is being developed as part of our academic project for the Departme
 
 ## Features
 
+- Self-registration for Students and Staff (with department)
 - Secure, role-based login for Student, Staff, HOD, and Campus Admin
 - Grievance submission, including a fully anonymous option
 - AI-based spam filtering for submitted grievances
@@ -16,7 +17,8 @@ This project is being developed as part of our academic project for the Departme
 ## Tech Stack
 
 - **Front End:** React
-- **Back End:** Django
+- **Back End:** Django (DRF)
+- **ML / NLP:** scikit-learn, NLTK
 - **Database:** PostgreSQL
 
 ## Getting Started
@@ -34,6 +36,7 @@ cd backend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('punkt_tab')"
 python manage.py migrate
 python manage.py runserver
 ```

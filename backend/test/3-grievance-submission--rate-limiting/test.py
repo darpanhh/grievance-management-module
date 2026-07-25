@@ -35,7 +35,11 @@ def setup_db():
     call_command('migrate', verbosity=0, interactive=False, run_syncdb=True)
 
 
-def _create_dept(name='Test Dept'):
+import uuid
+
+def _create_dept(name=None):
+    if name is None:
+        name = f'Test Dept {uuid.uuid4().hex[:8]}'
     return Department.objects.create(name=name, department_type='ACADEMIC')
 
 

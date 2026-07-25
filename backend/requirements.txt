@@ -4,3 +4,6 @@ django-cors-headers
 djangorestframework-simplejwt
 psycopg2-binary
 python-dotenv
+nltk
+scikit-learn
+emoji
