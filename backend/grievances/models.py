@@ -42,6 +42,8 @@ class Grievance(models.Model):
         Department,
         on_delete=models.PROTECT,
         related_name='grievances',
+        null=True,
+        blank=True,
         help_text="The department responsible for handling this grievance."
     )
     category = models.ForeignKey(

@@ -5,6 +5,10 @@ Phase 4: AI Spam Filtering
   - Spam detection integrated into submission pipeline
   - Spam queue management for Campus Admin
   - Appeal mechanism for submitters
+
+Phase 5: Grievance Routing
+  - Automatic routing to selected (or submitter's) department after submission
+  - Submission pipeline transitions SUBMITTED -> UNDER_REVIEW (when not spam)
 """
 
 from django.contrib.auth.hashers import check_password
@@ -29,6 +33,7 @@ from .serializers import (
     GrievanceTrackSerializer,
 )
 from .services.spam_detector import KeywordSpamDetector
+from .services.routing import route_grievance
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +152,11 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
         After creating the grievance, runs automatic spam detection
         (Phase 4).  If the grievance is classified as spam, its status is
         updated to SPAM and the spammer is notified via the response.
+
+        For non-spam grievances the pipeline then continues to automatic
+        routing (Phase 5): the grievance is assigned to the submitter's
+        selected department (or their own department as a fallback) and
+        its status transitions from SUBMITTED to UNDER_REVIEW.
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -182,6 +192,17 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
                     f"(confidence: {result['confidence_score']:.2f}). "
                     f"{result['classification_reason']}"
                 ),
+            )
+        else:
+            # --------------------------------------------------------------
+            # Phase 5 — Automatic Routing
+            # --------------------------------------------------------------
+            # Only route non-spam grievances.  The routing service is
+            # responsible for setting the target department (selected or
+            # fallback) and transitioning the status to UNDER_REVIEW.
+            route_grievance(
+                grievance,
+                action_by=request.user,
             )
 
         # Build response data
