@@ -94,7 +94,7 @@ const TrackGrievance = () => {
           <form className="anonymous-track-panel" onSubmit={submit}>
             <div className="panel-heading"><div><h2><span>♢</span> Track Anonymously</h2><p>Enter your Grievance ID and Secret Code to track anonymously.</p></div></div>
             <div className="track-field"><label htmlFor="grievance-id">Grievance ID</label><div><input id="grievance-id" inputMode="numeric" type="number" min="1" required value={credentials.id} onChange={(event) => setCredentials((current) => ({ ...current, id: event.target.value }))} placeholder="For example: GMS-0007" /><span>▧</span></div></div>
-            <div className="track-field"><label htmlFor="secret-code">Secret Code</label><div><input id="secret-code" required value={credentials.secret_code} onChange={(event) => setCredentials((current) => ({ ...current, secret_code: event.target.value }))} placeholder="Your 6-character code" autoCapitalize="characters" /><span>♙</span></div></div>
+            <div className="track-field"><label htmlFor="secret-code">Secret Code</label><div><input id="secret-code" required value={credentials.secret_code} onChange={(event) => setCredentials((current) => ({ ...current, secret_code: event.target.value }))} placeholder="Your 8-character code" autoCapitalize="characters" /><span>♙</span></div></div>
             {error && <div className="form-alert danger" role="alert">{error}</div>}
             <button className="track-submit" disabled={loading} type="submit">⌕ &nbsp; {loading ? 'Looking up…' : 'Track Grievance'}</button>
             <p className="privacy-message"><span>♢</span> Your identity is protected. No one, including admins, can see your personal information.</p>
