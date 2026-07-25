@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import api from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 
@@ -7,6 +7,9 @@ const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateSty
 
 const GrievanceDetail = () => {
   const { id } = useParams();
+  const location = useLocation();
+  const backTo = location.state?.backTo || '/dashboard/student';
+  const backLabel = location.state?.backLabel || 'Back to my grievances';
   const [grievance, setGrievance] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -20,9 +23,9 @@ const GrievanceDetail = () => {
   useEffect(() => { loadGrievance(); }, [loadGrievance]);
 
   if (loading) return <div className="dashboard-state"><div className="spinner" /><p>Loading grievance…</p></div>;
-  if (error) return <div className="dashboard-state error-state"><h1>Unable to load grievance</h1><p>{error}</p><div className="detail-actions"><button className="btn btn-primary" onClick={loadGrievance}>Try again</button><Link className="btn btn-outline" to="/dashboard/student">Back to dashboard</Link></div></div>;
+  if (error) return <div className="dashboard-state error-state"><h1>Unable to load grievance</h1><p>{error}</p><div className="detail-actions"><button className="btn btn-primary" onClick={loadGrievance}>Try again</button><Link className="btn btn-outline" to={backTo}>{backLabel}</Link></div></div>;
 
-  return <section className="dashboard-page"><div className="dashboard-container detail-page-container"><Link className="back-link" to="/dashboard/student">← Back to my grievances</Link><article className="grievance-detail">
+  return <section className="dashboard-page"><div className="dashboard-container detail-page-container"><Link className="back-link" to={backTo}>← {backLabel}</Link><article className="grievance-detail">
     <header className="detail-header"><div><span className="detail-id">GMS-{String(grievance.id).padStart(4, '0')}</span><h1>{grievance.title}</h1><p>Submitted {formatDate(grievance.created_at)}</p></div><StatusBadge status={grievance.current_status} /></header>
     <dl className="detail-meta"><div><dt>Category</dt><dd>{grievance.category_name || '—'}</dd></div><div><dt>Department</dt><dd>{grievance.department_name || '—'}</dd></div><div><dt>Submitted by</dt><dd>{grievance.is_anonymous ? 'Anonymous' : grievance.submitter_name || 'Not available'}</dd></div><div><dt>Last updated</dt><dd>{formatDate(grievance.updated_at)}</dd></div></dl>
     <section><h2>Grievance details</h2><p className="detail-description">{grievance.description}</p></section>
