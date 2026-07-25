@@ -136,6 +136,9 @@ class GrievanceCreateSerializer(serializers.ModelSerializer):
             'title', 'description', 'category', 'department',
             'is_anonymous', 'uploaded_files',
         ]
+        extra_kwargs = {
+            'department': {'required': False, 'allow_null': True},
+        }
 
     def validate_title(self, value):
         """Title must be between 5 and 255 characters."""

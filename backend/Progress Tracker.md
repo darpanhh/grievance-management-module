@@ -84,10 +84,12 @@
 
 | Component | Status |
 |-----------|--------|
-| `grievances/services/routing.py` | ❌ Not started |
-| Automatic routing service | ❌ Not started |
-| Department-scoped grievance list views | ❌ Not started |
-| `GET /api/grievances/{id}/` (detail view) | ❌ Not started |
+| `grievances/services/routing.py` | ✅ Done |
+| `route_grievance()` — automatic routing service | ✅ Done |
+| Department-scoped grievance list views | ✅ Done |
+| `GET /api/grievances/{id}/` (detail view) | ✅ Done |
+| Migration for nullable department field | ✅ Done |
+| Tests: routing, scoping, history, category independence (7/7 pass) | ✅ Done |
 
 ### Phase 6: Response & Escalation Workflow (Backend)
 
@@ -143,4 +145,5 @@
 
 ## Next Step
 
-**Phase 5 — Grievance Routing**
+**Phase 6 — Response & Escalation Workflow**
+
