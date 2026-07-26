@@ -94,14 +94,22 @@
 
 | Component | Status |
 |-----------|--------|
-| Status transition validation | ❌ Not started |
-| StatusHistory auto-logging (signals) | ❌ Not started |
-| `POST /api/grievances/{id}/respond/` (HOD response) | ❌ Not started |
-| `POST /api/grievances/{id}/resolve/` (submitter) | ❌ Not started |
-| `POST /api/grievances/{id}/reopen/` (submitter) | ❌ Not started |
-| `grievances/management/commands/escalate.py` (cron job) | ❌ Not started |
-| `POST /api/admin/escalated/{id}/resolve/` (Campus Admin) | ❌ Not started |
-| `grievances/utils.py` (helper functions) | ❌ Not started |
+| `VALID_TRANSITIONS` dict — transition validation engine | ✅ Done |
+| StatusHistory auto-logging (`signals.py` via `@receiver(pre_save)`) | ✅ Done |
+| `POST /api/grievances/{id}/respond/` (HOD response) | ✅ Done |
+| `POST /api/grievances/{id}/resolve/` (submitter) | ✅ Done |
+| `POST /api/grievances/{id}/reopen/` (submitter, sets `is_reopened=True`) | ✅ Done |
+| `POST /api/admin/escalated/{id}/resolve/` (Campus Admin, with auto-close) | ✅ Done |
+| Escalation model fields (`escalation_level`, `escalated_to`) | ✅ Done |
+| `grievances/services/escalation_service.py` — APScheduler engine | ✅ Done |
+| APScheduler auto-escalation (hourly, 72h threshold, configurable) | ✅ Done |
+| `python manage.py escalate` — manual trigger with `--dry-run` | ✅ Done |
+| Email: submission notification to HOD | ✅ Done |
+| Email: response notification to submitter | ✅ Done |
+| Email: resolution notification to submitter | ✅ Done |
+| Email: escalation notification to assigned Campus Admin | ✅ Done |
+| Gmail SMTP configured (console fallback for dev) | ✅ Done |
+| Tests: workflow endpoints, escalation, signal, transitions (16/16 pass) | ✅ Done |
 
 ### Phase 7: Dashboards, Search & Export (Backend)
 
@@ -144,5 +152,12 @@
 
 ## Next Step
 
-**Phase 6 — Response & Escalation Workflow**
+**Phase 7 — Dashboards, Search & Export**
+
+| Method | Endpoint | Role | Purpose |
+|--------|----------|------|---------|
+| GET | `/api/dashboard/student/` | Student | Own grievances with counts |
+| GET | `/api/dashboard/department/` | HOD, Staff | Department grievances with tabs |
+| GET | `/api/dashboard/admin/` | Campus Admin | System-wide stats + recent activity |
+| GET | `/api/reports/export/?format=csv\|pdf` | Campus Admin | Filtered export |
 

@@ -35,4 +35,28 @@ urlpatterns = [
         views.appeal_spam,
         name='appeal_spam',
     ),
+
+    # ------------------------------------------------------------------
+    # Phase 6 — Response & Escalation Workflow
+    # ------------------------------------------------------------------
+    path(
+        'grievances/<int:pk>/respond/',
+        views.respond_to_grievance,
+        name='respond_to_grievance',
+    ),
+    path(
+        'grievances/<int:pk>/resolve/',
+        views.resolve_grievance,
+        name='resolve_grievance',
+    ),
+    path(
+        'grievances/<int:pk>/reopen/',
+        views.reopen_grievance,
+        name='reopen_grievance',
+    ),
+    path(
+        'admin/escalated/<int:pk>/resolve/',
+        views.admin_resolve_escalated,
+        name='admin_resolve_escalated',
+    ),
 ]

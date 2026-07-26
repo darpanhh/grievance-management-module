@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escalation Notification</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7fc;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 30px auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #f97316, #ef4444);
+            padding: 24px 32px;
+            color: white;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 600;
+        }
+        .header .badge {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 20px;
+            padding: 4px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-top: 8px;
+        }
+        .body {
+            padding: 32px;
+        }
+        .greeting {
+            font-size: 16px;
+            color: #1e293b;
+            margin-bottom: 20px;
+        }
+        .meta-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .meta-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 14px;
+        }
+        .meta-table td:first-child {
+            font-weight: 600;
+            color: #64748b;
+            width: 35%;
+        }
+        .meta-table td:last-child {
+            color: #1e293b;
+        }
+        .description-box {
+            background-color: #f8fafc;
+            border-left: 4px solid #f97316;
+            padding: 16px;
+            margin: 20px 0;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #334155;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+        .cta-button {
+            display: block;
+            width: 100%;
+            text-align: center;
+            margin: 28px 0;
+        }
+        .cta-button a {
+            display: inline-block;
+            background-color: #f97316;
+            color: white;
+            text-decoration: none;
+            padding: 14px 36px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .cta-button a:hover {
+            background-color: #ea580c;
+        }
+        .footer {
+            padding: 24px 32px;
+            background-color: #f8fafc;
+            color: #94a3b8;
+            font-size: 12px;
+            text-align: center;
+            border-top: 1px solid #e2e8f0;
+        }
+        .footer p {
+            margin: 4px 0;
+        }
+        @media only screen and (max-width: 600px) {
+            .container { margin: 10px; }
+            .body { padding: 20px; }
+            .header { padding: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚠️ Escalated Grievance</h1>
+            <span class="badge">GMS-{{ grievance.id|stringformat:"04d" }}</span>
+        </div>
+
+        <div class="body">
+            <p class="greeting">
+                Dear <strong>{{ officer.get_full_name|default:officer.username }}</strong>,
+            </p>
+
+            <p style="color: #475569; font-size: 14px; margin-bottom: 8px;">
+                A grievance has been automatically escalated and requires your attention.
+                Please review the details below and take appropriate action.
+            </p>
+
+            <table class="meta-table">
+                <tr>
+                    <td>Title</td>
+                    <td><strong>{{ grievance.title }}</strong></td>
+                </tr>
+                <tr>
+                    <td>Category</td>
+                    <td>{{ category }}</td>
+                </tr>
+                <tr>
+                    <td>Department</td>
+                    <td>{{ department }}</td>
+                </tr>
+                <tr>
+                    <td>Submitted by</td>
+                    <td>{{ submitter }}</td>
+                </tr>
+                <tr>
+                    <td>Current Status</td>
+                    <td>{{ status_display }}</td>
+                </tr>
+                <tr>
+                    <td>Submitted</td>
+                    <td>{{ created_at|date:"Y-m-d H:i" }}</td>
+                </tr>
+                <tr>
+                    <td>Last Updated</td>
+                    <td>{{ updated_at|date:"Y-m-d H:i" }}</td>
+                </tr>
+            </table>
+
+            <p style="font-weight: 600; color: #1e293b; margin-bottom: 8px;">Description:</p>
+            <div class="description-box">{{ description|truncatewords:100 }}</div>
+
+            <div class="cta-button">
+                <a href="{% if grievance_url %}{{ grievance_url }}{% endif %}">
+                    View Grievance in System
+                </a>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p><strong>{{ site_name }}</strong></p>
+            <p>This is an automated notification. Please do not reply to this email.</p>
+            <p>© {% now "Y" %} Grievance Management System</p>
+        </div>
+    </div>
+</body>
+</html>
