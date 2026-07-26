@@ -70,6 +70,18 @@ class Grievance(models.Model):
         default=False,
         help_text="Flag distinguishing repeated review cycles from the first pass."
     )
+    escalation_level = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Current escalation level (0 = normal, 1+, 2+, etc.).",
+    )
+    escalated_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='escalated_grievances',
+        help_text="The officer this grievance was escalated to.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

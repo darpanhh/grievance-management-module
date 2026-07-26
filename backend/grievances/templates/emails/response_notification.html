@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Response Received</title>
+<style>
+body{font-family:'Segoe UI',sans-serif;background:#f4f7fc;margin:0;padding:0}
+.container{max-width:600px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.1)}
+.header{background:linear-gradient(135deg,#10b981,#059669);padding:24px 32px;color:#fff}
+.header h1{margin:0;font-size:22px;font-weight:600}
+.body{padding:32px}
+.greeting{font-size:16px;color:#1e293b;margin-bottom:20px}
+.actions{margin:24px 0}
+.actions a{display:inline-block;background:#10b981;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;margin:4px}
+.actions a.review{background:#8B5CF6}
+.footer{padding:24px 32px;background:#f8fafc;color:#94a3b8;font-size:12px;text-align:center;border-top:1px solid #e2e8f0}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header"><h1>✅ Response Received</h1></div>
+<div class="body">
+<p class="greeting">Dear <strong>{{ user.get_full_name|default:user.username }}</strong>,</p>
+<p style="color:#475569;font-size:14px">Your grievance has received a response from <strong>{{ hod_name }}</strong>.</p>
+<table class="meta-table" style="width:100%;border-collapse:collapse;margin:20px 0">
+<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;width:35%">Grievance</td>
+<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0"><strong>GMS-{{ grievance.id|stringformat:"04d" }}</strong></td></tr>
+<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b">Title</td>
+<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0"><strong>{{ grievance.title }}</strong></td></tr>
+<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b">Status</td>
+<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0">{{ grievance.get_current_status_display }}</td></tr>
+</table>
+<div class="actions">
+<p>What would you like to do?</p>
+<a href="#">✓ Resolve (if satisfied)</a>
+<a class="review" href="#">↻ Request Further Review (if unsatisfied)</a>
+</div>
+</div>
+<div class="footer"><p><strong>{{ site_name }}</strong></p><p>This is an automated notification.</p></div>
+</div>
+</body>
+</html>

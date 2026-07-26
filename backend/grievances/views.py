@@ -34,6 +34,11 @@ from .serializers import (
 )
 from .services.spam_detector import MLSpamDetector
 from .services.routing import route_grievance
+from .services.escalation_service import (
+    send_submission_email,
+    send_response_email,
+    send_resolution_email,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +212,10 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
 
         # Build response data
         data = GrievanceDetailSerializer(grievance, context={'request': request}).data
+
+        # Notify the HOD about the new grievance
+        if not result['spam_prediction']:
+            send_submission_email(grievance)
 
         # If anonymous, include the plain-text secret code (only returned once)
         raw_code = getattr(serializer, '_raw_secret_code', None)
@@ -425,3 +434,245 @@ def appeal_spam(request, pk):
         },
         status=status.HTTP_200_OK,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — Response & Escalation Workflow
+# ---------------------------------------------------------------------------
+
+VALID_TRANSITIONS = {
+    Grievance.Status.SUBMITTED: {
+        Grievance.Status.UNDER_REVIEW,
+        Grievance.Status.SPAM,
+    },
+    Grievance.Status.SPAM: {
+        Grievance.Status.SUBMITTED,
+        Grievance.Status.CLOSED,
+    },
+    Grievance.Status.UNDER_REVIEW: {
+        Grievance.Status.RESPONDED,
+        Grievance.Status.ESCALATED,
+    },
+    Grievance.Status.RESPONDED: {
+        Grievance.Status.RESOLVED,
+        Grievance.Status.REOPENED,
+        Grievance.Status.ESCALATED,
+    },
+    Grievance.Status.REOPENED: {
+        Grievance.Status.RESPONDED,
+        Grievance.Status.ESCALATED,
+    },
+    Grievance.Status.ESCALATED: {
+        Grievance.Status.RESOLVED,
+    },
+    Grievance.Status.RESOLVED: {
+        Grievance.Status.CLOSED,
+    },
+    Grievance.Status.CLOSED: set(),
+}
+
+
+def _is_valid_transition(from_status: str, to_status: str) -> bool:
+    """
+    Return ``True`` if a transition from *from_status* to *to_status*
+    is recognised by the workflow engine.
+    """
+    allowed = VALID_TRANSITIONS.get(from_status)
+    if allowed is None:
+        return False
+    return to_status in allowed
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def respond_to_grievance(request, pk):
+    """
+    POST /api/grievances/{pk}/respond/
+
+    Allows an HOD to respond to a grievance that is UNDER_REVIEW or
+    REOPENED.  The HOD must belong to the grievance's assigned department.
+
+    Creates a ``Response`` record and transitions the grievance status
+    to RESPONDED.
+    """
+    if request.user.role != 'HOD':
+        raise PermissionDenied('Only HODs can respond to grievances.')
+
+    grievance = get_object_or_404(
+        Grievance.objects.select_related('department'),
+        pk=pk,
+    )
+
+    # HOD must belong to the grievance's department
+    if grievance.department != request.user.department:
+        raise PermissionDenied(
+            'You can only respond to grievances in your own department.'
+        )
+
+    if grievance.current_status not in (
+        Grievance.Status.UNDER_REVIEW,
+        Grievance.Status.REOPENED,
+    ):
+        return Response(
+            {
+                'error': (
+                    'Grievance must be UNDER_REVIEW or REOPENED '
+                    'before it can be responded to.'
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    content = request.data.get('content', '').strip()
+    if not content:
+        return Response(
+            {'error': 'Response content is required.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Create the Response record
+    from .models import Response as GrievanceResponse
+    GrievanceResponse.objects.create(
+        grievance=grievance,
+        responder=request.user,
+        content=content,
+    )
+
+    # Transition status (signal auto-logs StatusHistory)
+    grievance._action_by = request.user
+    grievance._action_remarks = (
+        f"Responded by HOD {request.user.get_full_name() or request.user.username}."
+    )
+    grievance.current_status = Grievance.Status.RESPONDED
+    grievance.save(update_fields=['current_status'])
+
+    # Notify the submitter about the response
+    send_response_email(grievance)
+
+    detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
+    return Response(detail, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def resolve_grievance(request, pk):
+    """
+    POST /api/grievances/{pk}/resolve/
+
+    Allows the original submitter to resolve their own grievance when
+    the status is RESPONDED.  Transitions to RESOLVED.
+    """
+    grievance = get_object_or_404(Grievance, pk=pk)
+
+    if grievance.user != request.user:
+        raise PermissionDenied('You can only resolve your own grievance.')
+
+    if grievance.current_status != Grievance.Status.RESPONDED:
+        return Response(
+            {'error': 'Grievance must be in RESPONDED status to resolve.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Transition status (signal auto-logs StatusHistory)
+    grievance._action_by = request.user
+    grievance._action_remarks = 'Resolved by the submitter.'
+    grievance.current_status = Grievance.Status.RESOLVED
+    grievance.save(update_fields=['current_status'])
+
+    # Notify the submitter about the resolution
+    send_resolution_email(grievance)
+
+    detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
+    return Response(detail, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def reopen_grievance(request, pk):
+    """
+    POST /api/grievances/{pk}/reopen/
+
+    Allows the original submitter to reopen their grievance when the
+    status is RESPONDED.  Sets ``is_reopened=True`` and transitions
+    to REOPENED.
+    """
+    grievance = get_object_or_404(Grievance, pk=pk)
+
+    if grievance.user != request.user:
+        raise PermissionDenied('You can only reopen your own grievance.')
+
+    if grievance.current_status != Grievance.Status.RESPONDED:
+        return Response(
+            {'error': 'Grievance must be in RESPONDED status to reopen.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Transition status (signal auto-logs StatusHistory)
+    grievance._action_by = request.user
+    grievance._action_remarks = 'Reopened by the submitter for further review.'
+    grievance.is_reopened = True
+    grievance.current_status = Grievance.Status.REOPENED
+    grievance.save(update_fields=['is_reopened', 'current_status'])
+
+    detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
+    return Response(detail, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_resolve_escalated(request, pk):
+    """
+    POST /api/admin/escalated/{pk}/resolve/
+
+    Allows a Campus Admin to resolve an escalated grievance.  This is a
+    final resolution — no submitter check is needed.
+
+    Per the implementation plan (§7.4):
+      1. Creates a Response record (from Campus Admin)
+      2. Transitions ESCALATED → RESOLVED
+      3. Auto-closes: RESOLVED → CLOSED (final — no submitter check)
+    """
+    if request.user.role != 'CAMPUS_ADMIN':
+        raise PermissionDenied('Only Campus Admins can resolve escalated grievances.')
+
+    grievance = get_object_or_404(Grievance, pk=pk)
+
+    if grievance.current_status != Grievance.Status.ESCALATED:
+        return Response(
+            {'error': 'Grievance must be in ESCALATED status.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    admin_name = request.user.get_full_name() or request.user.username
+
+    # 1. Create a Response record from the Campus Admin
+    content = request.data.get('content', '').strip()
+    if content:
+        from .models import Response as GrievanceResponse
+        GrievanceResponse.objects.create(
+            grievance=grievance,
+            responder=request.user,
+            content=content,
+        )
+
+    # 2. Transition ESCALATED → RESOLVED (signal auto-logs StatusHistory)
+    grievance._action_by = request.user
+    grievance._action_remarks = (
+        f"Escalated grievance resolved by Campus Admin {admin_name}."
+    )
+    grievance.current_status = Grievance.Status.RESOLVED
+    grievance.save(update_fields=['current_status'])
+
+    # 3. Auto-close: RESOLVED → CLOSED (no submitter check needed — final)
+    grievance._action_by = request.user
+    grievance._action_remarks = (
+        f"Auto-closed after Campus Admin {admin_name} resolved the escalated grievance."
+    )
+    grievance.current_status = Grievance.Status.CLOSED
+    grievance.save(update_fields=['current_status'])
+
+    # Notify the submitter about the resolution
+    send_resolution_email(grievance)
+
+    detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
+    return Response(detail, status=status.HTTP_200_OK)

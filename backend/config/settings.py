@@ -185,3 +185,36 @@ SIMPLE_JWT = {
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
 }
 
+
+# ---------------------------------------------------------------------------
+# Email Configuration (Django SMTP)
+# ---------------------------------------------------------------------------
+# These defaults work for dev (console backend prints to stdout).
+# Override via .env for production SMTP.
+
+EMAIL_BACKEND = os.getenv(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend',
+)
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv(
+    'DEFAULT_FROM_EMAIL',
+    'Grievance Management System <noreply@college.edu.np>',
+)
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8000')
+
+
+# ---------------------------------------------------------------------------
+# Escalation Configuration
+# ---------------------------------------------------------------------------
+# Number of hours of inactivity before a grievance is auto-escalated.
+# Grievances in UNDER_REVIEW / RESPONDED / REOPENED that have not been
+# updated for this many hours are escalated to a Campus Admin.
+
+ESCALATION_HOURS = int(os.getenv('ESCALATION_HOURS', '72'))  # default 3 days
+ESCALATION_INTERVAL_MINUTES = int(os.getenv('ESCALATION_INTERVAL_MINUTES', '60'))
+

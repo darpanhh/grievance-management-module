@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>New Grievance</title>
+<style>
+body{font-family:'Segoe UI',sans-serif;background:#f4f7fc;margin:0;padding:0}
+.container{max-width:600px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.1)}
+.header{background:linear-gradient(135deg,#3B82F6,#1d4ed8);padding:24px 32px;color:#fff}
+.header h1{margin:0;font-size:22px;font-weight:600}
+.body{padding:32px}
+.greeting{font-size:16px;color:#1e293b;margin-bottom:20px}
+.meta-table{width:100%;border-collapse:collapse;margin:20px 0}
+.meta-table td{padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:14px}
+.meta-table td:first-child{font-weight:600;color:#64748b;width:35%}
+.desc-box{background:#f8fafc;border-left:4px solid #3B82F6;padding:16px;margin:20px 0;border-radius:4px;font-size:14px;color:#334155;line-height:1.6;white-space:pre-wrap}
+.footer{padding:24px 32px;background:#f8fafc;color:#94a3b8;font-size:12px;text-align:center;border-top:1px solid #e2e8f0}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header"><h1>📋 New Grievance Submitted</h1></div>
+<div class="body">
+<p class="greeting">Dear <strong>{{ hod.get_full_name|default:hod.username }}</strong>,</p>
+<p style="color:#475569;font-size:14px">A new grievance has been submitted to your department and requires your attention.</p>
+<table class="meta-table">
+<tr><td>Grievance ID</td><td><strong>GMS-{{ grievance.id|stringformat:"04d" }}</strong></td></tr>
+<tr><td>Title</td><td><strong>{{ grievance.title }}</strong></td></tr>
+<tr><td>Category</td><td>{{ grievance.category.name|default:"N/A" }}</td></tr>
+<tr><td>Submitted by</td><td>{{ submitter }}</td></tr>
+<tr><td>Status</td><td>{{ grievance.get_current_status_display }}</td></tr>
+<tr><td>Submitted</td><td>{{ grievance.created_at|date:"Y-m-d H:i" }}</td></tr>
+</table>
+<p style="font-weight:600;color:#1e293b">Description:</p>
+<div class="desc-box">{{ grievance.description|truncatewords:100 }}</div>
+</div>
+<div class="footer"><p><strong>{{ site_name }}</strong></p><p>This is an automated notification.</p></div>
+</div>
+</body>
+</html>

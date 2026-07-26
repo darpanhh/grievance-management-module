@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grievance Resolved</title>
+<style>
+body{font-family:'Segoe UI',sans-serif;background:#f4f7fc;margin:0;padding:0}
+.container{max-width:600px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.1)}
+.header{background:linear-gradient(135deg,#22C55E,#16a34a);padding:24px 32px;color:#fff}
+.header h1{margin:0;font-size:22px;font-weight:600}
+.body{padding:32px}
+.greeting{font-size:16px;color:#1e293b;margin-bottom:20px}
+.footer{padding:24px 32px;background:#f8fafc;color:#94a3b8;font-size:12px;text-align:center;border-top:1px solid #e2e8f0}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header"><h1>🎉 Grievance Resolved</h1></div>
+<div class="body">
+<p class="greeting">Dear <strong>{{ user.get_full_name|default:user.username }}</strong>,</p>
+<p style="color:#475569;font-size:14px">Your grievance has been marked as resolved.</p>
+<p style="background:#f0fdf4;padding:16px;border-radius:8px;font-size:14px;color:#166534">
+<strong>GMS-{{ grievance.id|stringformat:"04d" }}</strong>: {{ grievance.title }}<br>
+Status: <strong>{{ grievance.get_current_status_display }}</strong>
+</p>
+<p style="color:#475569;font-size:14px">Thank you for using the Grievance Management System. We hope your concern has been addressed satisfactorily.</p>
+</div>
+<div class="footer"><p><strong>{{ site_name }}</strong></p><p>This is an automated notification.</p></div>
+</div>
+</body>
+</html>

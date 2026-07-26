@@ -87,12 +87,16 @@ class GrievanceListSerializer(serializers.ModelSerializer):
     submitter_name = serializers.SerializerMethodField()
     attachment_count = serializers.SerializerMethodField()
     days_since_update = serializers.SerializerMethodField()
+    escalated_to_name = serializers.CharField(
+        source='escalated_to.get_full_name', read_only=True, allow_null=True
+    )
 
     class Meta:
         model = Grievance
         fields = [
             'id', 'title', 'current_status', 'category', 'category_name',
             'department', 'department_name', 'is_anonymous', 'is_reopened',
+            'escalation_level', 'escalated_to_name',
             'submitter_name', 'attachment_count', 'days_since_update',
             'created_at', 'updated_at',
         ]
@@ -241,6 +245,9 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
     submitter_name = serializers.SerializerMethodField()
+    escalated_to_name = serializers.CharField(
+        source='escalated_to.get_full_name', read_only=True, allow_null=True
+    )
     responses = ResponseSerializer(many=True, read_only=True)
     status_history = StatusHistorySerializer(many=True, read_only=True)
     ai_analysis = AIAnalysisSerializer(read_only=True, allow_null=True)
@@ -251,7 +258,8 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'current_status',
             'category', 'category_name', 'department', 'department_name',
-            'is_anonymous', 'is_reopened', 'submitter_name',
+            'is_anonymous', 'is_reopened', 'escalation_level',
+            'escalated_to_name', 'submitter_name',
             'responses', 'status_history', 'ai_analysis', 'attachments',
             'created_at', 'updated_at',
         ]
