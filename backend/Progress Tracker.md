@@ -115,11 +115,11 @@
 
 | Component | Status |
 |-----------|--------|
-| `GET /api/dashboard/student/` | ❌ Not started |
-| `GET /api/dashboard/department/` | ❌ Not started |
-| `GET /api/dashboard/admin/` | ❌ Not started |
-| Search & filter on grievance list | ❌ Not started |
-| `GET /api/reports/export/` (CSV/PDF) | ❌ Not started |
+| `GET /api/dashboard/student/` | ✅ Done |
+| `GET /api/dashboard/department/` | ✅ Done |
+| `GET /api/dashboard/admin/` | ✅ Done |
+| Search & filter on grievance list | ✅ Done |
+| `GET /api/reports/export/` (CSV/PDF) | ✅ Done |
 
 ### Phase 8: Frontend (All UI — deferred to last)
 
@@ -152,12 +152,19 @@
 
 ## Next Step
 
-**Phase 7 — Dashboards, Search & Export**
+**Phase 8 — Frontend (Complete UI)**
 
-| Method | Endpoint | Role | Purpose |
-|--------|----------|------|---------|
-| GET | `/api/dashboard/student/` | Student | Own grievances with counts |
-| GET | `/api/dashboard/department/` | HOD, Staff | Department grievances with tabs |
-| GET | `/api/dashboard/admin/` | Campus Admin | System-wide stats + recent activity |
-| GET | `/api/reports/export/?format=csv\|pdf` | Campus Admin | Filtered export |
+Build the entire frontend application after all backend phases are complete.
+
+| Component | Priority |
+|-----------|----------|
+| Auth context + protected routing | Foundation |
+| Login, Register, Password Reset pages | Auth |
+| Grievance submission form (file upload + anonymous) | Core |
+| Anonymous tracking page | Core |
+| Student dashboard | Dashboard |
+| Department dashboard (HOD/Staff) | Dashboard |
+| Campus Admin dashboard | Dashboard |
+| Grievance detail page | Detail |
+| Status badges, search/filter, error/loading states | Shared |
 
