@@ -59,4 +59,28 @@ urlpatterns = [
         views.admin_resolve_escalated,
         name='admin_resolve_escalated',
     ),
+
+    # ------------------------------------------------------------------
+    # Phase 7 — Dashboards, Search & Export
+    # ------------------------------------------------------------------
+    path(
+        'dashboard/student/',
+        views.StudentDashboardView.as_view(),
+        name='dashboard_student',
+    ),
+    path(
+        'dashboard/department/',
+        views.DepartmentDashboardView.as_view(),
+        name='dashboard_department',
+    ),
+    path(
+        'dashboard/admin/',
+        views.AdminDashboardView.as_view(),
+        name='dashboard_admin',
+    ),
+    path(
+        'reports/export/',
+        views.export_grievances,
+        name='export_grievances',
+    ),
 ]

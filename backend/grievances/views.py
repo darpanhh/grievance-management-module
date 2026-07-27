@@ -11,12 +11,16 @@ Phase 5: Grievance Routing
   - Submission pipeline transitions SUBMITTED -> UNDER_REVIEW (when not spam)
 """
 
+import csv
+
 from django.contrib.auth.hashers import check_password
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, Throttled
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
@@ -92,6 +96,10 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
 
     parser_classes = (JSONParser, MultiPartParser, FormParser)
     permission_classes = (permissions.IsAuthenticated,)
+    filter_backends = (SearchFilter, OrderingFilter)
+    search_fields = ('title', 'description')
+    ordering_fields = ('created_at', 'updated_at', 'title', 'current_status')
+    ordering = ('-created_at',)
 
     def get_serializer_class(self):
         """Return a lightweight serializer for list and a full one for create."""
@@ -119,6 +127,36 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
         # CAMPUS_ADMIN sees everything — no additional filter
 
         return qs.order_by('-created_at')
+
+    def filter_queryset(self, queryset):
+        """
+        Apply DRF's SearchFilter + OrderingFilter, then apply custom
+        filters for *category*, *status*, *date_from*, and *date_to*
+        query parameters.
+        """
+        # Run DRF built-in filters first (search + ordering)
+        queryset = super().filter_queryset(queryset)
+
+        # Custom query-param filters
+        params = self.request.query_params
+
+        category = params.get('category')
+        if category:
+            queryset = queryset.filter(category=category)
+
+        status_val = params.get('status')
+        if status_val:
+            queryset = queryset.filter(current_status=status_val.upper())
+
+        date_from = params.get('date_from')
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+
+        date_to = params.get('date_to')
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+
+        return queryset
 
     def check_throttles(self, request):
         """
@@ -676,3 +714,240 @@ def admin_resolve_escalated(request, pk):
 
     detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
     return Response(detail, status=status.HTTP_200_OK)
+
+# ---------------------------------------------------------------------------
+# Phase 7 — Dashboards, Search & Export
+# ---------------------------------------------------------------------------
+
+
+class StudentDashboardView(generics.GenericAPIView):
+    """
+    GET /api/dashboard/student/
+
+    Returns the authenticated student's grievances with status counts
+    and a list of recent items.  Only accessible by STUDENT and STAFF
+    roles.
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+    serializer_class = GrievanceListSerializer
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        grievances_qs = Grievance.objects.filter(
+            user=user,
+        ).select_related(
+            'category', 'department',
+        ).order_by('-created_at')
+
+        total = grievances_qs.count()
+        resolved = grievances_qs.filter(
+            current_status=Grievance.Status.RESOLVED
+        ).count()
+        escalated = grievances_qs.filter(
+            current_status=Grievance.Status.ESCALATED
+        ).count()
+        pending = grievances_qs.exclude(
+            current_status__in=(
+                Grievance.Status.RESOLVED,
+                Grievance.Status.CLOSED,
+                Grievance.Status.ESCALATED,
+            ),
+        ).count()
+
+        # Attach days_since_update
+        grievances = grievances_qs[:50]
+        data = GrievanceListSerializer(
+            grievances, many=True, context={'request': request},
+        ).data
+
+        return Response({
+            'counts': {
+                'total': total,
+                'resolved': resolved,
+                'escalated': escalated,
+                'pending': pending,
+            },
+            'grievances': data,
+        })
+
+
+class DepartmentDashboardView(generics.GenericAPIView):
+    """
+    GET /api/dashboard/department/
+
+    Returns department grievances with tabbed counts (Open / Resolved /
+    Escalated / All).  Accessible by HOD and STAFF roles — scope is the
+    user's own department.
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+    serializer_class = GrievanceListSerializer
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        dept = user.department
+
+        if not dept:
+            return Response(
+                {'error': 'You are not assigned to any department.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        grievances_qs = Grievance.objects.filter(
+            department=dept,
+        ).select_related(
+            'category', 'department', 'user',
+        ).order_by('-created_at')
+
+        total = grievances_qs.count()
+        open_count = grievances_qs.filter(
+            current_status__in=(
+                Grievance.Status.UNDER_REVIEW,
+                Grievance.Status.RESPONDED,
+                Grievance.Status.REOPENED,
+            ),
+        ).count()
+        resolved = grievances_qs.filter(
+            current_status=Grievance.Status.RESOLVED,
+        ).count()
+        escalated = grievances_qs.filter(
+            current_status=Grievance.Status.ESCALATED,
+        ).count()
+
+        grievances = grievances_qs[:50]
+        data = GrievanceListSerializer(
+            grievances, many=True, context={'request': request},
+        ).data
+
+        return Response({
+            'counts': {
+                'total': total,
+                'open': open_count,
+                'resolved': resolved,
+                'escalated': escalated,
+            },
+            'grievances': data,
+        })
+
+
+class AdminDashboardView(generics.GenericAPIView):
+    """
+    GET /api/dashboard/admin/
+
+    Returns system-wide statistics for Campus Admin:
+      - Aggregate counts by status
+      - Escalated and spam counts
+      - The 10 most recently updated grievances
+    """
+
+    permission_classes = (permissions.IsAuthenticated, IsCampusAdmin)
+
+    def get(self, request, *args, **kwargs):
+        qs = Grievance.objects.all()
+
+        # Counts by individual status
+        status_counts = {}
+        for status_choice in Grievance.Status.values:
+            status_counts[status_choice] = qs.filter(
+                current_status=status_choice,
+            ).count()
+
+        # Aggregate counts
+        escalated_count = qs.filter(
+            current_status=Grievance.Status.ESCALATED,
+        ).count()
+        spam_count = qs.filter(
+            current_status=Grievance.Status.SPAM,
+        ).count()
+        total = qs.count()
+
+        # 10 most recently updated grievances
+        recent = qs.select_related(
+            'category', 'department', 'user',
+        ).order_by('-updated_at')[:10]
+
+        recent_data = GrievanceListSerializer(
+            recent, many=True, context={'request': request},
+        ).data
+
+        return Response({
+            'counts': {
+                'total': total,
+                'status_breakdown': status_counts,
+                'escalated': escalated_count,
+                'spam': spam_count,
+            },
+            'recent': recent_data,
+        })
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated, IsCampusAdmin])
+def export_grievances(request):
+    """
+    GET /api/reports/export/?format=csv
+
+    Exports grievances as a CSV file.  Campus Admin only.
+
+    Supports optional query-parameter filters:
+      - department (int)  — filter by department ID
+      - status (str)      — filter by current_status
+      - date_from (str)   — filter by created_at >= date
+      - date_to (str)     — filter by created_at <= date
+
+    The export excludes the submitter's identity for anonymous grievances.
+    """
+    qs = Grievance.objects.select_related(
+        'category', 'department', 'user',
+    ).order_by('-created_at')
+
+    # Apply filters
+    params = request.query_params
+
+    dept = params.get('department')
+    if dept:
+        qs = qs.filter(department=dept)
+
+    status_val = params.get('status')
+    if status_val:
+        qs = qs.filter(current_status=status_val.upper())
+
+    date_from = params.get('date_from')
+    if date_from:
+        qs = qs.filter(created_at__date__gte=date_from)
+
+    date_to = params.get('date_to')
+    if date_to:
+        qs = qs.filter(created_at__date__lte=date_to)
+
+    # Build CSV response
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = (
+        f'attachment; filename="grievances_export_{timezone.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+    )
+
+    writer = csv.writer(response)
+    writer.writerow([
+        'ID', 'Title', 'Status', 'Category', 'Department',
+        'Submitter Name', 'Is Anonymous', 'Is Reopened',
+        'Escalation Level', 'Created At', 'Updated At',
+    ])
+
+    for g in qs.iterator(chunk_size=200):
+        submitter_name = (
+            None if g.is_anonymous
+            else (g.user.get_full_name() or g.user.username)
+        )
+        writer.writerow([
+            g.id, g.title, g.current_status,
+            g.category.name if g.category else '',
+            g.department.name if g.department else '',
+            submitter_name,
+            g.is_anonymous, g.is_reopened,
+            g.escalation_level,
+            g.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            g.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+        ])
+
+    return response
