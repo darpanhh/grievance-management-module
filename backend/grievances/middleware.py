@@ -25,18 +25,13 @@ class RequestLogMiddleware:
         duration_ms = (time.time() - start) * 1000
 
         user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
+        uid = str(user.id) if user else 'anonymous'
+        role = user.role if user else 'ANONYMOUS'
+        ip = request.META.get('REMOTE_ADDR', '')
 
         logger.info(
-            'user=%(user)s role=%(role)s %(method)s %(path)s → %(status)d (%(duration).0fms) ip=%(ip)s',
-            extra={
-                'user': user.username if user else 'anonymous',
-                'role': user.role if user else 'ANONYMOUS',
-                'method': request.method,
-                'path': request.path,
-                'status': response.status_code,
-                'duration': f'{duration_ms:.0f}',
-                'ip': request.META.get('REMOTE_ADDR', ''),
-            },
+            f'user={uid} role={role} {request.method} {request.path}'
+            f' => {response.status_code} ({duration_ms:.0f}ms) ip={ip}',
         )
 
         return response

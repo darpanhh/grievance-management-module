@@ -1,13 +1,6 @@
 # Workspace
-.agents
 .claude
-.claude/skills
-.claude/skills/gms-workflow
 graphify-out
-docs
-docs/GMS_SRS_v2.0.docx
-
-backend/test.md
 
 # Python / Django
 backend/venv/
@@ -21,4 +14,3 @@ backend/db.sqlite3
 # Node / React / Frontend
 frontend/node_modules/
 frontend/dist/
-frontend/src/assets/hero.png

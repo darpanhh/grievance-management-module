@@ -48,7 +48,7 @@ def audit_log(
     user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
 
     record = {
-        'user': user.username if user else 'anonymous',
+        'user': str(user.id) if user else 'anonymous',
         'role': user.role if user else 'ANONYMOUS',
         'grievance': f'GMS-{grievance_id:04d}' if grievance_id else None,
         'action': action,
@@ -67,7 +67,25 @@ def audit_log(
     if extra:
         record.update(extra)
 
+    parts = [
+        f'user={record["user"]}',
+        f'role={record["role"]}',
+    ]
+    if record['grievance']:
+        parts.append(f'grievance={record["grievance"]}')
+    parts.append(f'action={action}')
+    if old_status:
+        parts.append(f'old_status={old_status}')
+    if new_status:
+        parts.append(f'new_status={new_status}')
+    parts.append(f'result={result}')
+    if error:
+        parts.append(f'error={error}')
+    parts.append(f'ip={record["ip"]}')
+
+    msg = ' '.join(parts) + f'  {details}'
+
     if result == 'SUCCESS':
-        audit_logger.info(details, extra={'audit': record})
+        audit_logger.info(msg)
     else:
-        audit_logger.error(details, extra={'audit': record})
+        audit_logger.error(msg)
