@@ -18,8 +18,7 @@
 10. [Phase 9 — Non-Functional Requirements](#10-phase-9--non-functional-requirements)
 11. [Phase 10 — Production Readiness](#11-phase-10--production-readiness)
 12. [API Endpoint Reference](#12-api-endpoint-reference)
-13. [Task Breakdown for 4-Person Team](#13-task-breakdown-for-4-person-team)
-14. [Appendix — Status Transition Rules](#14-appendix--status-transition-rules)
+13. [Appendix — Status Transition Rules](#13-appendix--status-transition-rules)
 
 ---
 
@@ -714,12 +713,12 @@ App
 
 | NFR | Requirement | Implementation |
 |-----|-------------|----------------|
-| NFR-01 | Password hashing | Set `PASSWORD_HASHERS` to use Argon2 or bcrypt |
-| NFR-02 | HTTPS | Enforce in production (SECURE_SSL_REDIRECT, HSTS) |
+| NFR-01 | Password hashing | Use Django's default PBKDF2. (Argon2 or bcrypt can be swapped LATER if needed  )|
+| NFR-02 | HTTPS | Configure Django settings to enforce HTTPS. During deployment, HTTPS can be enabled by installing a valid SSL/TLS certificate and configuring HTTP-to-HTTPS redirection.|
 | NFR-03 | RBAC server-side | DRF permission classes — never rely on frontend-only checks |
 | NFR-04 | Anonymous data privacy | Exclude `user_id` from serializers when `is_anonymous=True` |
 | NFR-05 | SQL injection prevention | Django ORM (parameterized queries by default) |
-| NFR-06 | XSS protection | Django template auto-escaping; React's JSX escaping; CSP headers |
+| NFR-06 | XSS protection | React's JSX auto-escaping covers all user-rendered content (no `dangerouslySetInnerHTML` or `innerHTML` used). Backend is a pure JSON API — no Django templates rendered, so no auto-escaping needed. CSP headers not configure; not critical for a JSON API. |
 | NFR-07 | CSRF protection | DRF enforces CSRF for session auth; JWT is stateless (no CSRF needed) |
 | NFR-08 | Session timeout | JWT access token: 30 min expiry; refresh token: 24h |
 
@@ -729,9 +728,9 @@ App
 |-----|--------|----------|
 | NFR-09 | Submission < 3s | Optimize with `select_related`; async spam check via Celery if needed |
 | NFR-10 | Dashboard < 2s | Indexed queries; pagination (20 per page) |
-| NFR-11 | Search < 3s | Database indexes on `current_status`, `category`, `created_at`; full-text search with PostgreSQL |
-| NFR-12 | 500 concurrent users | Connection pooling (PgBouncer); static files via CDN; gunicorn with multiple workers |
-| NFR-13 | Escalation every 24h | Cron job or Celery Beat scheduled task |
+| NFR-11 | Search < 3s | Database indexes on `current_status`, `category`, `created_at`; Use DRF's `SearchFilter` with basic `LIKE`. PostgreSQL full-text search can be implemented if needed. |
+| NFR-12 | 500 concurrent users | Gunicorn handles concurrent requests. WhiteNoise for  For production static file serving (via `collectstatic`). Connection pooling (PgBouncer) and nginx/CDN (static files) are optional ( not required for this internal campus system.)|
+| NFR-13 | Escalation every 24h | Use APScheduler(Cron job or Celery Beat overkill for this system) |
 
 ### 10.3 Usability (NFR-14 to NFR-17)
 
@@ -744,15 +743,15 @@ App
 
 | NFR | Requirement | Implementation |
 |-----|-------------|----------------|
-| NFR-18 | 99% uptime (8 AM–6 PM weekdays) | Health check endpoint; process monitoring (supervisor/systemd) |
+| NFR-18 | 99% uptime (8 AM–6 PM weekdays) | Health check endpoint at `/api/status/`; process management can be implemented if needed |
 | NFR-19 | No data loss on errors | Database transactions; grievance creation wrapped in `atomic()` |
-| NFR-20 | Daily backups | `pg_dump` via cron; stored securely with 4h RTO |
+| NFR-20 | Daily backups | Daily database backups scheduled automatically, stored securely, with recovery can be implemented if needed |
 | NFR-21 | Error logging | Structured logging (JSON) to file; log rotation; enough context to reproduce |
 
 ### 10.5 Maintainability (NFR-22 to NFR-25)
 
-- NFR-22: Python — PEP 8 (Black formatter); JS — ESLint with Prettier
-- NFR-23: Docstrings on all models, views, services; README for onboarding
+- NFR-22: Python — PEP 8 (Black formatter); JS — ESLint with Prettier (can be implemented if needed)
+- NFR-23: Docstrings on all models, views, services; README for onboarding 
 - NFR-24: Modular architecture — services layer separates business logic from views; AI interface for swappable backends
 - NFR-25: Git with conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`)
 
@@ -760,7 +759,7 @@ App
 
 - NFR-26: AI module via interface (Strategy pattern) — swap implementation without touching views
 - NFR-27: Indexed fields: `created_at`, `current_status`, `category_id`, `department_id`, `user_id`; partitioning by date if needed
-- NFR-28: Stateless Django app behind load balancer; shared PostgreSQL; read replicas for dashboards/reports
+- NFR-28: Stateless Django app behind load balancer; shared PostgreSQL; read replicas for dashboards/reports.Satisfied through Django's stateless architecture; load balancing and database replication can be added later if needed.
 
 ---
 

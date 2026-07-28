@@ -57,7 +57,8 @@ class Grievance(models.Model):
     current_status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.SUBMITTED
+        default=Status.SUBMITTED,
+        db_index=True,
     )
     is_anonymous = models.BooleanField(default=False)
     secret_code = models.CharField(
@@ -82,7 +83,7 @@ class Grievance(models.Model):
         related_name='escalated_grievances',
         help_text="The officer this grievance was escalated to.",
     )
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

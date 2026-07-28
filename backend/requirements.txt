@@ -8,3 +8,5 @@ nltk
 scikit-learn
 emoji
 apscheduler
+gunicorn
+whitenoise

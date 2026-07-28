@@ -285,6 +285,10 @@
 
 .hero-section {
   padding: 5rem 1.5rem 4rem;
+  min-height: calc(100vh - 140px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: radial-gradient(circle at 50% 0%, rgba(79, 70, 229, 0.08) 0%, rgba(248, 250, 252, 0) 70%);
   text-align: center;
 }
@@ -789,6 +793,20 @@
 .confirmation-id, .secret-code { margin-top: 1.25rem; padding: 1rem; border-radius: var(--radius-sm); background: #f8fafc; display: grid; gap: .35rem; }.confirmation-id span, .secret-code span { color: var(--text-muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }.confirmation-id strong { font-size: 1.35rem; color: var(--primary); }.secret-code { background: #fffbeb; border: 1px solid #fde68a; }.secret-code strong { font-size: 1.45rem; letter-spacing: .12em; color: #92400e; }.secret-code small { color: #92400e; }.modal-actions { display: flex; justify-content: center; gap: .75rem; margin-top: 1.5rem; }
 .grievance-detail { margin-top: 2rem; display: grid; gap: 1.75rem; }.detail-header { display: flex; justify-content: space-between; gap: 1rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border-color); }.detail-header h2 { margin: .25rem 0; color: var(--text-main); }.detail-header p, .detail-header time { color: var(--text-muted); font-size: .85rem; }.status-badge { align-self: flex-start; border-radius: 999px; padding: .35rem .75rem; text-transform: capitalize; white-space: nowrap; font-size: .78rem; font-weight: 800; background: #e0e7ff; color: #4338ca; }.status-resolved, .status-closed { color: #166534; background: #dcfce7; }.status-rejected, .status-spam { color: #b91c1c; background: #fee2e2; }.detail-meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }.detail-meta div { padding: .75rem; background: #f8fafc; border-radius: var(--radius-sm); }.detail-meta dt { font-size: .75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }.detail-meta dd { margin: .25rem 0 0; color: var(--text-main); font-weight: 600; }.grievance-detail h3 { color: var(--text-main); font-size: 1rem; margin-bottom: .65rem; }.detail-description { line-height: 1.7; white-space: pre-wrap; color: var(--text-main); }.attachment-list a { color: var(--primary); font-weight: 700; }.response-list { display: grid; gap: .75rem; }.response-card { border-left: 3px solid var(--primary); padding: .85rem 1rem; background: #f8fafc; }.response-card header { display: flex; justify-content: space-between; gap: 1rem; font-size: .85rem; }.response-card time, .empty-note { color: var(--text-muted); font-size: .85rem; }.response-card p { margin-top: .5rem; white-space: pre-wrap; }.history-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 1rem; }.history-list li { display: grid; grid-template-columns: 16px 1fr; gap: .75rem; }.history-dot { margin-top: .3rem; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 4px var(--primary-light); }.history-list time { display: block; color: var(--text-muted); font-size: .8rem; margin-top: .2rem; }.history-list p { margin-top: .3rem; font-size: .9rem; color: var(--text-muted); }
 
+/* Status badge tooltip */
+.status-badge { position: relative; cursor: help; }
+.status-tooltip {
+  visibility: hidden; opacity: 0; position: absolute; z-index: 500; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  width: 220px; padding: .55rem .7rem; border-radius: var(--radius-sm); font-size: .75rem; font-weight: 400; line-height: 1.4; white-space: normal; text-align: center;
+  color: #fff; background: #1e293b; box-shadow: 0 4px 12px rgba(0,0,0,.2); pointer-events: none;
+  transition: opacity .15s ease, visibility .15s ease;
+}
+.status-tooltip::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: #1e293b;
+}
+.status-badge:hover .status-tooltip { visibility: visible; opacity: 1; }
+
 /* Loading Spinner */
 .loading-spinner-container {
   display: flex;
@@ -822,6 +840,8 @@
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+.app-footer a { color: var(--primary); font-weight: 600; }
+.app-footer a:hover { text-decoration: underline; }
 
 /* Mobile Responsiveness */
 @media (max-width: 768px) {

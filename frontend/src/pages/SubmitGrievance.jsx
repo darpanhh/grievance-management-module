@@ -7,7 +7,7 @@ const initialForm = { title: '', description: '', category: '', department: '', 
 
 const getErrorMessage = (error) => {
   const data = error.response?.data;
-  if (error.response?.status === 429) return data?.detail || 'You have reached the daily limit of 3 grievances. Please try again after midnight.';
+  if (error.response?.status === 429) return data?.detail || 'You have reached the daily limit of grievances. Please try again after midnight.';
   if (typeof data === 'string') return data;
   if (data?.detail || data?.message || data?.error) return data.detail || data.message || data.error;
   if (data && typeof data === 'object') {

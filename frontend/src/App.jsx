@@ -8,6 +8,7 @@ import Register from './pages/Register';
 import PasswordReset from './pages/PasswordReset';
 import SubmitGrievance from './pages/SubmitGrievance';
 import TrackGrievance from './pages/TrackGrievance';
+import Faq from './pages/Faq';
 import StudentDashboard from './pages/StudentDashboard';
 import GrievanceDetail from './pages/GrievanceDetail';
 import DepartmentDashboard from './pages/DepartmentDashboard';
@@ -56,6 +57,7 @@ function App() {
               <Route path="/password-reset" element={<PasswordReset />} />
               <Route path="/grievances/track" element={<TrackGrievance />} />
               <Route path="/track" element={<Navigate to="/grievances/track" replace />} />
+              <Route path="/faq" element={<Faq />} />
 
               {/* Protected Routes */}
               <Route
@@ -107,7 +109,7 @@ function App() {
           </main>
           <footer className="app-footer">
             <p>
-              IOE Pulchowk Campus Grievance Portal &bull; Institute of Engineering, Tribhuvan University © 2026
+              IOE Pulchowk Campus Grievance Portal &bull; <Link to="/faq">FAQ</Link> &bull; Institute of Engineering, Tribhuvan University © 2026
             </p>
           </footer>
         </div>
