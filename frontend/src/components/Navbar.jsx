@@ -78,14 +78,22 @@ const Navbar = () => {
             )}
 
             {user && (
-              <Link 
-                to={dashboardUrl} 
+              <Link
+                to={dashboardUrl}
                 className={`nav-link ${isActive(dashboardUrl) || isActive('/dashboard') ? 'active' : ''}`}
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Dashboard
               </Link>
             )}
+
+            <Link
+              to="/faq"
+              className={`nav-link ${isActive('/faq') ? 'active' : ''}`}
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Help
+            </Link>
           </div>
 
           {/* User Auth Controls / Dropdown */}

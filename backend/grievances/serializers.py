@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from rest_framework import serializers
 
 from .models import (
@@ -188,49 +189,50 @@ class GrievanceCreateSerializer(serializers.ModelSerializer):
         return files
 
     def create(self, validated_data):
-        """Create the grievance, handling anonymous secret code generation."""
-        uploaded_files = validated_data.pop('uploaded_files', [])
+        """Create the grievance within an atomic transaction for data integrity."""
+        with transaction.atomic():
+            uploaded_files = validated_data.pop('uploaded_files', [])
 
-        request = self.context.get('request')
-        user = request.user if request else None
+            request = self.context.get('request')
+            user = request.user if request else None
 
-        grievance = Grievance.objects.create(
-            user=user,
-            title=validated_data['title'],
-            description=validated_data['description'],
-            category=validated_data.get('category'),
-            department=validated_data.get('department'),
-            is_anonymous=validated_data.get('is_anonymous', False),
-            current_status=Grievance.Status.SUBMITTED,
-        )
-
-        # Generate secret code for anonymous grievances
-        if grievance.is_anonymous:
-            from django.utils.crypto import get_random_string
-            raw_code = get_random_string(8).upper()
-            from django.contrib.auth.hashers import make_password
-            grievance.secret_code = make_password(raw_code)
-            grievance.save(update_fields=['secret_code'])
-            # Store the raw code so the view can return it once
-            self._raw_secret_code = raw_code
-
-        # Create initial StatusHistory entry
-        StatusHistory.objects.create(
-            grievance=grievance,
-            previous_status=None,
-            new_status=Grievance.Status.SUBMITTED,
-            action_by=user,
-            remarks='Grievance submitted.',
-        )
-
-        # Create attachments
-        for f in uploaded_files:
-            Attachment.objects.create(
-                grievance=grievance,
-                file_name=f.name,
-                file_type=f.content_type or 'application/octet-stream',
-                file=f,
+            grievance = Grievance.objects.create(
+                user=user,
+                title=validated_data['title'],
+                description=validated_data['description'],
+                category=validated_data.get('category'),
+                department=validated_data.get('department'),
+                is_anonymous=validated_data.get('is_anonymous', False),
+                current_status=Grievance.Status.SUBMITTED,
             )
+
+            # Generate secret code for anonymous grievances
+            if grievance.is_anonymous:
+                from django.utils.crypto import get_random_string
+                raw_code = get_random_string(8).upper()
+                from django.contrib.auth.hashers import make_password
+                grievance.secret_code = make_password(raw_code)
+                grievance.save(update_fields=['secret_code'])
+                # Store the raw code so the view can return it once
+                self._raw_secret_code = raw_code
+
+            # Create initial StatusHistory entry
+            StatusHistory.objects.create(
+                grievance=grievance,
+                previous_status=None,
+                new_status=Grievance.Status.SUBMITTED,
+                action_by=user,
+                remarks='Grievance submitted.',
+            )
+
+            # Create attachments
+            for f in uploaded_files:
+                Attachment.objects.create(
+                    grievance=grievance,
+                    file_name=f.name,
+                    file_type=f.content_type or 'application/octet-stream',
+                    file=f,
+                )
 
         return grievance
 

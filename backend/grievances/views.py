@@ -38,6 +38,7 @@ from .serializers import (
 )
 from .services.spam_detector import MLSpamDetector
 from .services.routing import route_grievance
+from .services.audit_logger import audit_log
 from .services.escalation_service import (
     send_submission_email,
     send_response_email,
@@ -178,7 +179,7 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
         if count >= 3:
             raise Throttled(
                 detail=(
-                    'You have reached the maximum limit of 3 grievances '
+                    'You have reached the maximum limit of grievances '
                     'per day. Please try again after midnight.'
                 )
             )
@@ -259,6 +260,14 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
         raw_code = getattr(serializer, '_raw_secret_code', None)
         if raw_code:
             data['secret_code'] = raw_code
+
+        audit_log(
+            request=request,
+            action='SUBMIT_GRIEVANCE',
+            grievance_id=grievance.id,
+            details=f'Grievance submitted ({"anonymous" if grievance.is_anonymous else "authenticated"})',
+            result='SUCCESS',
+        )
 
         return Response(data, status=status.HTTP_201_CREATED)
 
@@ -427,6 +436,16 @@ def reinstate_spam(request, pk):
         remarks='Grievance reinstated by Campus Admin — spam classification overridden.',
     )
 
+    audit_log(
+        request=request,
+        action='REINSTATE_SPAM',
+        grievance_id=grievance.id,
+        details=f'Campus Admin reinstated grievance from spam',
+        old_status='SPAM',
+        new_status='SUBMITTED',
+        result='SUCCESS',
+    )
+
     detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
     return Response(detail, status=status.HTTP_200_OK)
 
@@ -461,6 +480,15 @@ def appeal_spam(request, pk):
         new_status=Grievance.Status.SPAM,  # stays SPAM pending admin review
         action_by=request.user,
         remarks='Submitter has appealed the spam classification — pending admin review.',
+    )
+
+    audit_log(
+        request=request,
+        action='APPEAL_SPAM',
+        grievance_id=grievance.id,
+        details='Submitter appealed spam classification — pending admin review',
+        old_status='SPAM',
+        result='SUCCESS',
     )
 
     return Response(
@@ -568,6 +596,9 @@ def respond_to_grievance(request, pk):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Capture previous status before transitioning
+    previous_status = grievance.current_status
+
     # Create the Response record
     from .models import Response as GrievanceResponse
     GrievanceResponse.objects.create(
@@ -586,6 +617,16 @@ def respond_to_grievance(request, pk):
 
     # Notify the submitter about the response
     send_response_email(grievance)
+
+    audit_log(
+        request=request,
+        action='RESPOND_TO_GRIEVANCE',
+        grievance_id=grievance.id,
+        details=f'HOD responded to grievance',
+        old_status=previous_status,
+        new_status='RESPONDED',
+        result='SUCCESS',
+    )
 
     detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
     return Response(detail, status=status.HTTP_200_OK)
@@ -611,6 +652,8 @@ def resolve_grievance(request, pk):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    previous_status = grievance.current_status
+
     # Transition status (signal auto-logs StatusHistory)
     grievance._action_by = request.user
     grievance._action_remarks = 'Resolved by the submitter.'
@@ -619,6 +662,16 @@ def resolve_grievance(request, pk):
 
     # Notify the submitter about the resolution
     send_resolution_email(grievance)
+
+    audit_log(
+        request=request,
+        action='RESOLVE_GRIEVANCE',
+        grievance_id=grievance.id,
+        details='Submitter resolved grievance',
+        old_status=previous_status,
+        new_status='RESOLVED',
+        result='SUCCESS',
+    )
 
     detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
     return Response(detail, status=status.HTTP_200_OK)
@@ -645,12 +698,24 @@ def reopen_grievance(request, pk):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    previous_status = grievance.current_status
+
     # Transition status (signal auto-logs StatusHistory)
     grievance._action_by = request.user
     grievance._action_remarks = 'Reopened by the submitter for further review.'
     grievance.is_reopened = True
     grievance.current_status = Grievance.Status.REOPENED
     grievance.save(update_fields=['is_reopened', 'current_status'])
+
+    audit_log(
+        request=request,
+        action='REOPEN_GRIEVANCE',
+        grievance_id=grievance.id,
+        details='Submitter reopened grievance for further review',
+        old_status=previous_status,
+        new_status='REOPENED',
+        result='SUCCESS',
+    )
 
     detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
     return Response(detail, status=status.HTTP_200_OK)
@@ -711,6 +776,16 @@ def admin_resolve_escalated(request, pk):
 
     # Notify the submitter about the resolution
     send_resolution_email(grievance)
+
+    audit_log(
+        request=request,
+        action='ADMIN_RESOLVE_ESCALATED',
+        grievance_id=grievance.id,
+        details=f'Campus Admin resolved escalated grievance',
+        old_status='ESCALATED',
+        new_status='CLOSED',
+        result='SUCCESS',
+    )
 
     detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
     return Response(detail, status=status.HTTP_200_OK)
