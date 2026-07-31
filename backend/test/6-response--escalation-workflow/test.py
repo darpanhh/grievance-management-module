@@ -1,9 +1,9 @@
 """
 Tests for Phase 6 — Response & Escalation Workflow
 
-Tests HOD response, submitter resolve/reopen, admin escalated resolve
-(with auto-close), APScheduler-based escalation service, officer
-assignment, and invalid transition blocking.
+Tests HOD response, submitter resolve/reopen, admin escalation review
+(via POST .../review/ + respond), CampUS Admin role handling,
+APScheduler-based escalation service, and invalid transition blocking.
 
 Usage:
     cd backend
@@ -68,7 +68,6 @@ def _create_user(username, role='STUDENT', department=None, password='testpass12
 
 
 def _auth_client(user, password='testpass123'):
-    """Return an APIClient pre-authenticated with JWT tokens."""
     client = APIClient()
     resp = client.post('/api/auth/login/', {
         'username': user.username, 'password': password,
@@ -89,7 +88,6 @@ _DESC = (
 
 def _create_grievance(user, dept, cat, status=Grievance.Status.UNDER_REVIEW,
                       title='Test grievance'):
-    """Create a grievance directly (bypasses submission pipeline)."""
     return Grievance.objects.create(
         user=user,
         department=dept,
@@ -181,7 +179,7 @@ def test_respond_changes_status_to_responded():
     assert resp.data['current_status'] == Grievance.Status.RESPONDED, \
         f"Expected RESPONDED in response, got {resp.data['current_status']}"
     assert len(resp.data['responses']) >= 1, \
-        "Expected at least one response in the detail payload"
+        "Expected at least one response"
 
     grievance.delete()
     student.delete()
@@ -206,7 +204,7 @@ def test_non_hod_cannot_respond():
         format='json',
     )
     assert resp.status_code == status.HTTP_403_FORBIDDEN, \
-        f"Expected 403 for Staff, got {resp.status_code}"
+        f"Expected 403, got {resp.status_code}"
 
     grievance.delete()
     student.delete()
@@ -239,6 +237,30 @@ def test_submitter_resolve():
     print("  PASS submitter resolve")
 
 
+def test_submitter_close():
+    """Submitter can close a RESOLVED grievance (e.g. after admin escalation)."""
+    dept = _create_dept()
+    cat = _create_category()
+    student = _create_user('clos_stu', role='STUDENT', department=dept)
+    grievance = _create_grievance(student, dept, cat,
+                                  Grievance.Status.RESOLVED)
+
+    client = _auth_client(student)
+    resp = client.post(f'/api/grievances/{grievance.pk}/resolve/', format='json')
+    assert resp.status_code == status.HTTP_200_OK, \
+        f"Expected 200, got {resp.status_code}: {resp.data}"
+
+    grievance.refresh_from_db()
+    assert grievance.current_status == Grievance.Status.CLOSED, \
+        f"Expected CLOSED, got {grievance.current_status}"
+
+    grievance.delete()
+    student.delete()
+    cat.delete()
+    dept.delete()
+    print("  PASS submitter close")
+
+
 def test_non_submitter_cannot_resolve():
     dept = _create_dept()
     cat = _create_category()
@@ -250,7 +272,7 @@ def test_non_submitter_cannot_resolve():
     client = _auth_client(other)
     resp = client.post(f'/api/grievances/{grievance.pk}/resolve/', format='json')
     assert resp.status_code == status.HTTP_403_FORBIDDEN, \
-        f"Expected 403 for non-submitter, got {resp.status_code}"
+        f"Expected 403, got {resp.status_code}"
 
     grievance.delete()
     other.delete()
@@ -283,6 +305,30 @@ def test_submitter_reopen():
     print("  PASS submitter reopen")
 
 
+def test_submitter_reopen_from_resolved():
+    """Submitter can reopen from RESOLVED (after admin escalation)."""
+    dept = _create_dept()
+    cat = _create_category()
+    student = _create_user('rerp_stu', role='STUDENT', department=dept)
+    grievance = _create_grievance(student, dept, cat,
+                                  Grievance.Status.RESOLVED)
+
+    client = _auth_client(student)
+    resp = client.post(f'/api/grievances/{grievance.pk}/reopen/', format='json')
+    assert resp.status_code == status.HTTP_200_OK, \
+        f"Expected 200, got {resp.status_code}: {resp.data}"
+
+    grievance.refresh_from_db()
+    assert grievance.current_status == Grievance.Status.REOPENED, \
+        f"Expected REOPENED, got {grievance.current_status}"
+
+    grievance.delete()
+    student.delete()
+    cat.delete()
+    dept.delete()
+    print("  PASS submitter reopen from RESOLVED")
+
+
 def test_resolve_changes_status():
     dept = _create_dept()
     cat = _create_category()
@@ -294,7 +340,7 @@ def test_resolve_changes_status():
     resp = client.post(f'/api/grievances/{grievance.pk}/resolve/', format='json')
     assert resp.status_code == status.HTTP_200_OK
     assert resp.data['current_status'] == Grievance.Status.RESOLVED, \
-        f"Expected RESOLVED in response, got {resp.data['current_status']}"
+        f"Expected RESOLVED, got {resp.data['current_status']}"
 
     grievance.delete()
     student.delete()
@@ -309,14 +355,12 @@ def test_reopen_sets_is_reopened_flag():
     student = _create_user('flag_stu', role='STUDENT', department=dept)
     grievance = _create_grievance(student, dept, cat,
                                   Grievance.Status.RESPONDED)
-    assert grievance.is_reopened is False, \
-        "Initially is_reopened should be False"
+    assert grievance.is_reopened is False
 
     client = _auth_client(student)
     resp = client.post(f'/api/grievances/{grievance.pk}/reopen/', format='json')
     assert resp.status_code == status.HTTP_200_OK
-    assert resp.data['is_reopened'] is True, \
-        "Expected is_reopened=True after reopen"
+    assert resp.data['is_reopened'] is True
 
     grievance.refresh_from_db()
     assert grievance.is_reopened is True
@@ -329,16 +373,80 @@ def test_reopen_sets_is_reopened_flag():
 
 
 # ---------------------------------------------------------------------------
+# Tests: Admin escalation review (new flow)
+# ---------------------------------------------------------------------------
+
+
+def test_admin_review_escalated():
+    """
+    Campus Admin reviews an ESCALATED grievance via POST .../review/,
+    then responds via POST .../respond/.  The submitter then decides
+    to close or reopen.
+    """
+    dept = _create_dept()
+    cat = _create_category()
+    admin = _create_user('adm_rev', role='CAMPUS_ADMIN')
+    student = _create_user('esc_stu', role='STUDENT', department=dept)
+    grievance = _create_grievance(student, dept, cat,
+                                  Grievance.Status.ESCALATED)
+
+    # Admin reviews the escalated grievance → UNDER_REVIEW
+    client = _auth_client(admin)
+    review_resp = client.post(f'/api/grievances/{grievance.pk}/review/')
+    assert review_resp.status_code == status.HTTP_200_OK, \
+        f"Review failed: {review_resp.status_code}: {review_resp.data}"
+    assert review_resp.data['current_status'] == 'UNDER_REVIEW', \
+        f"Expected UNDER_REVIEW, got {review_resp.data['current_status']}"
+
+    # Admin responds → RESPONDED
+    respond_resp = client.post(
+        f'/api/grievances/{grievance.pk}/respond/',
+        {'content': 'Admin has reviewed and resolved this matter.'},
+        format='json',
+    )
+    assert respond_resp.status_code == status.HTTP_200_OK, \
+        f"Respond failed: {respond_resp.status_code}: {respond_resp.data}"
+    assert respond_resp.data['current_status'] == 'RESPONDED', \
+        f"Expected RESPONDED, got {respond_resp.data['current_status']}"
+
+    # Submitter resolves (RESPONDED → RESOLVED), then closes (RESOLVED → CLOSED)
+    sub_client = _auth_client(student)
+    resolve_resp = sub_client.post(f'/api/grievances/{grievance.pk}/resolve/', format='json')
+    assert resolve_resp.status_code == status.HTTP_200_OK
+    grievance.refresh_from_db()
+    assert grievance.current_status == Grievance.Status.RESOLVED, \
+        f"Expected RESOLVED after first resolve, got {grievance.current_status}"
+
+    close_resp = sub_client.post(f'/api/grievances/{grievance.pk}/resolve/', format='json')
+    assert close_resp.status_code == status.HTTP_200_OK
+    grievance.refresh_from_db()
+    assert grievance.current_status == Grievance.Status.CLOSED, \
+        f"Expected CLOSED, got {grievance.current_status}"
+
+    # StatusHistory should have all transitions
+    transitions = list(StatusHistory.objects.filter(
+        grievance=grievance
+    ).values_list('previous_status', 'new_status'))
+    assert any(
+        prev == 'ESCALATED' and nxt == 'UNDER_REVIEW'
+        for prev, nxt in transitions
+    ), "Missing StatusHistory for ESCALATED → UNDER_REVIEW"
+
+    grievance.delete()
+    student.delete()
+    admin.delete()
+    cat.delete()
+    dept.delete()
+    print("  PASS admin review escalated (review → respond → close)")
+
+
+# ---------------------------------------------------------------------------
 # Tests: Escalation service (single-level)
 # ---------------------------------------------------------------------------
 
 
-def test_escalation_service_finds_stale():
-    """
-    run_escalation_cycle() finds grievances in UNDER_REVIEW/RESPONDED/REOPENED
-    that are older than the configured threshold and escalates them.
-    """
-    from grievances.services.escalation_service import run_escalation_cycle
+def test_escalation_finds_stale():
+    from grievances.services.escalation import run_escalation_cycle
 
     dept = _create_dept()
     cat = _create_category()
@@ -364,8 +472,7 @@ def test_escalation_service_finds_stale():
         f"Expected escalation_level=1, got {grievance.escalation_level}"
     assert grievance.current_status == Grievance.Status.ESCALATED, \
         f"Expected ESCALATED, got {grievance.current_status}"
-    assert grievance.escalated_to is not None, \
-        "Expected escalated_to to be assigned"
+    assert grievance.escalated_to is not None
 
     grievance.delete()
     admin.delete()
@@ -376,11 +483,7 @@ def test_escalation_service_finds_stale():
 
 
 def test_escalation_sets_level_one():
-    """
-    Escalating a grievance sets escalation_level to 1 (single-level).
-    It does NOT increment beyond 1.
-    """
-    from grievances.services.escalation_service import escalate
+    from grievances.services.escalation import escalate
 
     dept = _create_dept()
     cat = _create_category()
@@ -395,15 +498,12 @@ def test_escalation_sets_level_one():
     grievance.refresh_from_db()
 
     result = escalate(grievance)
-    assert result is True, "Escalation should succeed"
+    assert result is True
 
     grievance.refresh_from_db()
-    assert grievance.escalation_level == 1, \
-        f"Expected level 1, got {grievance.escalation_level}"
-    assert grievance.current_status == Grievance.Status.ESCALATED, \
-        f"Expected ESCALATED, got {grievance.current_status}"
-    assert grievance.escalated_to is not None, \
-        "Expected escalated_to to be assigned"
+    assert grievance.escalation_level == 1
+    assert grievance.current_status == Grievance.Status.ESCALATED
+    assert grievance.escalated_to is not None
 
     grievance.delete()
     admin.delete()
@@ -414,10 +514,7 @@ def test_escalation_sets_level_one():
 
 
 def test_escalation_assigns_officer():
-    """
-    After escalation, escalated_to is set to a Campus Admin.
-    """
-    from grievances.services.escalation_service import escalate
+    from grievances.services.escalation import escalate
 
     dept = _create_dept()
     cat = _create_category()
@@ -434,19 +531,15 @@ def test_escalation_assigns_officer():
     assert escalate(grievance) is True
 
     grievance.refresh_from_db()
-    assert grievance.escalated_to is not None, \
-        "escalated_to should be assigned"
-    assert grievance.escalated_to.role == 'CAMPUS_ADMIN', \
-        f"Expected CAMPUS_ADMIN, got {grievance.escalated_to.role}"
+    assert grievance.escalated_to is not None
+    assert grievance.escalated_to.role == 'CAMPUS_ADMIN'
 
     history_entry = StatusHistory.objects.filter(
         grievance=grievance,
         new_status=Grievance.Status.ESCALATED,
     ).order_by('-created_at').first()
-    assert history_entry is not None, \
-        "Missing StatusHistory for escalation"
-    assert history_entry.remarks != '', \
-        "StatusHistory remarks should not be empty"
+    assert history_entry is not None
+    assert history_entry.remarks != ''
 
     grievance.delete()
     admin.delete()
@@ -457,10 +550,7 @@ def test_escalation_assigns_officer():
 
 
 def test_escalation_history_has_remarks():
-    """
-    StatusHistory entries from escalation include meaningful remarks.
-    """
-    from grievances.services.escalation_service import escalate
+    from grievances.services.escalation import escalate
 
     dept = _create_dept()
     cat = _create_category()
@@ -482,9 +572,9 @@ def test_escalation_history_has_remarks():
         new_status=Grievance.Status.ESCALATED,
     ).order_by('-created_at').first()
 
-    assert entry is not None, "Missing StatusHistory entry"
-    assert 'Escalated' in entry.remarks or 'assigned to' in entry.remarks.lower(), \
-        f"Remarks should mention escalation, got: {entry.remarks}"
+    assert entry is not None
+    assert 'assigned to' in entry.remarks.lower(), \
+        f"Remarks should mention assignment, got: {entry.remarks}"
 
     grievance.delete()
     admin.delete()
@@ -495,73 +585,11 @@ def test_escalation_history_has_remarks():
 
 
 # ---------------------------------------------------------------------------
-# Tests: Admin resolve escalated (with auto-close)
-# ---------------------------------------------------------------------------
-
-
-def test_admin_resolve_escalated():
-    """
-    Campus Admin can resolve an ESCALATED grievance.
-
-    Per the implementation plan (§7.4): Creates a Response record,
-    transitions ESCALATED → RESOLVED → CLOSED (auto-close, final).
-    """
-    dept = _create_dept()
-    cat = _create_category()
-    admin = _create_user('admin_re', role='CAMPUS_ADMIN')
-    student = _create_user('esc_stu', role='STUDENT', department=dept)
-    grievance = _create_grievance(student, dept, cat,
-                                  Grievance.Status.ESCALATED)
-
-    client = _auth_client(admin)
-    resp = client.post(
-        f'/api/admin/escalated/{grievance.pk}/resolve/',
-        {'content': 'Resolved by the administration. The matter has been addressed.'},
-        format='json',
-    )
-    assert resp.status_code == status.HTTP_200_OK, \
-        f"Expected 200, got {resp.status_code}: {resp.data}"
-
-    # Final status should be CLOSED (auto-close after admin resolve)
-    grievance.refresh_from_db()
-    assert grievance.current_status == Grievance.Status.CLOSED, \
-        f"Expected CLOSED (auto-close), got {grievance.current_status}"
-
-    # A Response record should have been created from the admin
-    assert len(resp.data['responses']) >= 1, \
-        "Expected at least one Response record from admin resolution"
-
-    # Both transitions should be logged in StatusHistory
-    transitions = list(StatusHistory.objects.filter(
-        grievance=grievance
-    ).values_list('previous_status', 'new_status'))
-
-    assert any(
-        prev == Grievance.Status.ESCALATED and nxt == Grievance.Status.RESOLVED
-        for prev, nxt in transitions
-    ), "Missing StatusHistory for ESCALATED → RESOLVED"
-    assert any(
-        prev == Grievance.Status.RESOLVED and nxt == Grievance.Status.CLOSED
-        for prev, nxt in transitions
-    ), "Missing StatusHistory for RESOLVED → CLOSED (auto-close)"
-
-    grievance.delete()
-    student.delete()
-    admin.delete()
-    cat.delete()
-    dept.delete()
-    print("  PASS admin resolve escalated (with auto-close)")
-
-
-# ---------------------------------------------------------------------------
 # Tests: Signal logging
 # ---------------------------------------------------------------------------
 
 
 def test_status_history_logged_on_transition():
-    """
-    The pre_save signal creates StatusHistory on every status transition.
-    """
     dept = _create_dept()
     cat = _create_category()
     hod = _create_user('sig_hod', role='HOD', department=dept)
@@ -580,18 +608,12 @@ def test_status_history_logged_on_transition():
     assert resp.status_code == status.HTTP_200_OK
 
     count_after = StatusHistory.objects.filter(grievance=grievance).count()
-    assert count_after > count_before, \
-        "Expected StatusHistory count to increase after transition"
+    assert count_after > count_before
 
-    latest = StatusHistory.objects.filter(
-        grievance=grievance
-    ).latest('created_at')
-    assert latest.previous_status == Grievance.Status.UNDER_REVIEW, \
-        f"Expected previous UNDER_REVIEW, got {latest.previous_status}"
-    assert latest.new_status == Grievance.Status.RESPONDED, \
-        f"Expected new RESPONDED, got {latest.new_status}"
-    assert latest.action_by == hod, \
-        "Expected action_by to be the HOD who responded"
+    latest = StatusHistory.objects.filter(grievance=grievance).latest('created_at')
+    assert latest.previous_status == Grievance.Status.UNDER_REVIEW
+    assert latest.new_status == Grievance.Status.RESPONDED
+    assert latest.action_by == hod
 
     grievance.delete()
     student.delete()
@@ -602,9 +624,6 @@ def test_status_history_logged_on_transition():
 
 
 def test_invalid_transition_blocked():
-    """
-    Invalid transitions (e.g. resolving a SUBMITTED grievance) are rejected.
-    """
     dept = _create_dept()
     cat = _create_category()
     student = _create_user('inv_stu', role='STUDENT', department=dept)
@@ -614,11 +633,10 @@ def test_invalid_transition_blocked():
     client = _auth_client(student)
     resp = client.post(f'/api/grievances/{grievance.pk}/resolve/', format='json')
     assert resp.status_code == status.HTTP_400_BAD_REQUEST, \
-        f"Expected 400 for invalid transition, got {resp.status_code}"
+        f"Expected 400, got {resp.status_code}"
 
     grievance.refresh_from_db()
-    assert grievance.current_status == Grievance.Status.SUBMITTED, \
-        "Status should not have changed after invalid transition"
+    assert grievance.current_status == Grievance.Status.SUBMITTED
 
     grievance.delete()
     student.delete()
@@ -633,24 +651,27 @@ def test_invalid_transition_blocked():
 
 def run():
     setup_db()
+    call_command('flush', verbosity=0, interactive=False)
 
     tests = [
-        ("HOD respond UNDER_REVIEW",            test_hod_respond_under_review),
-        ("HOD respond REOPENED",                 test_hod_respond_reopened),
-        ("Respond changes status to RESPONDED",  test_respond_changes_status_to_responded),
-        ("Non-HOD cannot respond",               test_non_hod_cannot_respond),
-        ("Submitter resolve",                    test_submitter_resolve),
-        ("Non-submitter cannot resolve",         test_non_submitter_cannot_resolve),
-        ("Submitter reopen",                     test_submitter_reopen),
-        ("Resolve changes status",               test_resolve_changes_status),
-        ("Reopen sets is_reopened flag",         test_reopen_sets_is_reopened_flag),
-        ("Escalation service finds stale",       test_escalation_service_finds_stale),
-        ("Escalation sets level 1",              test_escalation_sets_level_one),
-        ("Escalation assigns officer",           test_escalation_assigns_officer),
-        ("Escalation history has remarks",       test_escalation_history_has_remarks),
-        ("Admin resolve escalated (auto-close)", test_admin_resolve_escalated),
-        ("StatusHistory logged on transition",   test_status_history_logged_on_transition),
-        ("Invalid transition blocked",           test_invalid_transition_blocked),
+        ("HOD respond UNDER_REVIEW",              test_hod_respond_under_review),
+        ("HOD respond REOPENED",                   test_hod_respond_reopened),
+        ("Respond changes status to RESPONDED",    test_respond_changes_status_to_responded),
+        ("Non-HOD cannot respond",                 test_non_hod_cannot_respond),
+        ("Submitter resolve",                      test_submitter_resolve),
+        ("Submitter close (RESOLVED→CLOSED)",       test_submitter_close),
+        ("Non-submitter cannot resolve",           test_non_submitter_cannot_resolve),
+        ("Submitter reopen",                       test_submitter_reopen),
+        ("Submitter reopen from RESOLVED",         test_submitter_reopen_from_resolved),
+        ("Resolve changes status",                 test_resolve_changes_status),
+        ("Reopen sets is_reopened flag",           test_reopen_sets_is_reopened_flag),
+        ("Admin review escalated (review→respond→close)", test_admin_review_escalated),
+        ("Escalation service finds stale",         test_escalation_finds_stale),
+        ("Escalation sets level 1",                test_escalation_sets_level_one),
+        ("Escalation assigns officer",             test_escalation_assigns_officer),
+        ("Escalation history has remarks",         test_escalation_history_has_remarks),
+        ("StatusHistory logged on transition",     test_status_history_logged_on_transition),
+        ("Invalid transition blocked",             test_invalid_transition_blocked),
     ]
 
     passed = 0

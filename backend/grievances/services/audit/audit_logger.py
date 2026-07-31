@@ -7,7 +7,7 @@ Logs every meaningful user action so the system is fully traceable:
 
 Usage:
 
-    from .audit_logger import audit_log
+    from grievances.services.audit.audit_logger import audit_log
 
     audit_log(
         request=request,

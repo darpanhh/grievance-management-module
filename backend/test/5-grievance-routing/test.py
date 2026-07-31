@@ -1,9 +1,9 @@
 """
-Tests for Phase 5 — Grievance Routing
+Tests for Phase 5 — Grievance Routing & Manual Review
 
-Tests automatic routing of non-spam grievances to the correct department,
-status transitions, StatusHistory logging, category independence, and
-department-scoped list/detail views for different user roles.
+Tests routing (department assignment only — status stays SUBMITTED),
+manual HOD review to move SUBMITTED → UNDER_REVIEW, department-scoped
+access for different roles, and spam routing.
 
 Usage:
     cd backend
@@ -32,7 +32,7 @@ from grievances.models import Category, Grievance, StatusHistory
 
 
 # ---------------------------------------------------------------------------
-# Helpers (all use auto-incrementing counters for unique names)
+# Helpers
 # ---------------------------------------------------------------------------
 
 _COUNTER = 0
@@ -50,17 +50,14 @@ def setup_db():
 
 
 def _create_dept():
-    """Create a Department with a unique name."""
     return Department.objects.create(name=f'TestDept {_next()}', department_type='ACADEMIC')
 
 
 def _create_category():
-    """Create a Category with a unique name."""
     return Category.objects.create(name=f'TestCat {_next()}', description='Test category')
 
 
 def _create_user(username, role='STUDENT', department=None, password='testpass123'):
-    """Create a user with a unique username by appending a counter."""
     return User.objects.create_user(
         username=f'{username}_{_next()}', password=password,
         role=role, department=department,
@@ -68,7 +65,6 @@ def _create_user(username, role='STUDENT', department=None, password='testpass12
 
 
 def _auth_client(user, password='testpass123'):
-    """Return an APIClient pre-authenticated with JWT tokens."""
     client = APIClient()
     resp = client.post('/api/auth/login/', {
         'username': user.username, 'password': password,
@@ -77,7 +73,7 @@ def _auth_client(user, password='testpass123'):
     return client
 
 
-_GRIEVANCE_DESCRIPTION = (
+_DESC = (
     "I am writing to bring to your attention an issue with the examination "
     "results for the subject of Data Structures. The grade displayed in the "
     "system does not match the marks I received in my answer sheet. I have "
@@ -91,7 +87,7 @@ def _submit_grievance(client, dept, cat, **overrides):
     """POST a grievance and return the response."""
     payload = {
         'title': overrides.get('title', 'Routing test grievance'),
-        'description': overrides.get('description', _GRIEVANCE_DESCRIPTION),
+        'description': overrides.get('description', _DESC),
         'category': cat.pk,
         'department': dept.pk,
         'is_anonymous': overrides.get('is_anonymous', False),
@@ -107,8 +103,7 @@ def _submit_grievance(client, dept, cat, **overrides):
 def test_route_to_selected_department():
     """
     When a submitter selects a department during submission, the grievance
-    is routed to that department, even if it differs from the submitter's
-    own department.
+    is routed to that department and stays in SUBMITTED status.
     """
     student_dept = _create_dept()
     target_dept = _create_dept()
@@ -120,8 +115,9 @@ def test_route_to_selected_department():
     assert resp.status_code == status.HTTP_201_CREATED, \
         f"Submission failed: {resp.status_code}: {resp.data}"
 
-    assert resp.data['current_status'] == 'UNDER_REVIEW', \
-        f"Expected UNDER_REVIEW, got {resp.data['current_status']}"
+    # Status stays SUBMITTED — no longer auto-routes to UNDER_REVIEW
+    assert resp.data['current_status'] == 'SUBMITTED', \
+        f"Expected SUBMITTED, got {resp.data['current_status']}"
 
     grievance = Grievance.objects.get(id=resp.data['id'])
     assert grievance.department.pk == target_dept.pk, \
@@ -137,18 +133,17 @@ def test_route_to_selected_department():
 
 def test_route_defaults_to_user_department():
     """
-    When no department is explicitly selected at submission time, the
-    routing service falls back to the submitter's own department.
+    When no department is selected, the routing service falls back to
+    the submitter's own department. Status stays SUBMITTED.
     """
     dept = _create_dept()
     cat = _create_category()
     user = _create_user('def_user', role='STUDENT', department=dept)
     client = _auth_client(user)
 
-    # Submit without specifying a department
     payload = {
         'title': 'Default routing test',
-        'description': _GRIEVANCE_DESCRIPTION,
+        'description': _DESC,
         'category': cat.pk,
         'is_anonymous': False,
     }
@@ -156,8 +151,8 @@ def test_route_defaults_to_user_department():
     assert resp.status_code == status.HTTP_201_CREATED, \
         f"Submission failed: {resp.status_code}: {resp.data}"
 
-    assert resp.data['current_status'] == 'UNDER_REVIEW', \
-        f"Expected UNDER_REVIEW, got {resp.data['current_status']}"
+    assert resp.data['current_status'] == 'SUBMITTED', \
+        f"Expected SUBMITTED, got {resp.data['current_status']}"
     assert resp.data['department'] == dept.pk, \
         f"Expected department {dept.pk}, got {resp.data['department']}"
 
@@ -168,69 +163,87 @@ def test_route_defaults_to_user_department():
     print("  PASS route defaults to user department")
 
 
-def test_status_changes_to_under_review():
+def test_hod_review_moves_to_under_review():
     """
-    After the routing service processes a non-spam grievance, its status
-    transitions from SUBMITTED to UNDER_REVIEW.
+    An HOD can move a SUBMITTED grievance to UNDER_REVIEW via
+    POST /api/grievances/{pk}/review/.
     """
     dept = _create_dept()
     cat = _create_category()
-    user = _create_user('status_user', role='STUDENT', department=dept)
-    client = _auth_client(user)
+    student = _create_user('hodrv_stu', role='STUDENT', department=dept)
+    hod = _create_user('hodrv_hod', role='HOD', department=dept)
 
-    resp = _submit_grievance(client, dept, cat)
+    # Submit as student
+    student_client = _auth_client(student)
+    resp = _submit_grievance(student_client, dept, cat)
     assert resp.status_code == status.HTTP_201_CREATED
-    assert resp.data['current_status'] == 'UNDER_REVIEW', \
-        f"Expected UNDER_REVIEW, got {resp.data['current_status']}"
+    grievance_id = resp.data['id']
+    assert resp.data['current_status'] == 'SUBMITTED'
 
-    Grievance.objects.filter(id=resp.data['id']).delete()
-    user.delete()
+    # HOD reviews
+    hod_client = _auth_client(hod)
+    review_resp = hod_client.post(f'/api/grievances/{grievance_id}/review/')
+    assert review_resp.status_code == status.HTTP_200_OK, \
+        f"Review failed: {review_resp.status_code}: {review_resp.data}"
+    assert review_resp.data['current_status'] == 'UNDER_REVIEW', \
+        f"Expected UNDER_REVIEW, got {review_resp.data['current_status']}"
+
+    Grievance.objects.filter(id=grievance_id).delete()
+    student.delete()
+    hod.delete()
     cat.delete()
     dept.delete()
-    print("  PASS status changes to UNDER_REVIEW")
+    print("  PASS HOD review moves to UNDER_REVIEW")
 
 
-def test_status_history_logged_on_routing():
+def test_status_history_logged_on_submit_and_review():
     """
-    When a grievance is routed, a StatusHistory entry must be created
-    documenting the SUBMITTED -> UNDER_REVIEW transition.
+    StatusHistory is created on submit (SUBMITTED) and on HOD review
+    (SUBMITTED → UNDER_REVIEW).
     """
     dept = _create_dept()
     cat = _create_category()
-    user = _create_user('hist_user', role='STUDENT', department=dept)
-    client = _auth_client(user)
+    student = _create_user('hist_stu', role='STUDENT', department=dept)
+    hod = _create_user('hist_hod', role='HOD', department=dept)
 
-    resp = _submit_grievance(client, dept, cat)
+    student_client = _auth_client(student)
+    resp = _submit_grievance(student_client, dept, cat)
     assert resp.status_code == status.HTTP_201_CREATED
+    grievance_id = resp.data['id']
 
-    grievance = Grievance.objects.get(id=resp.data['id'])
+    # Check submit status history
+    grievance = Grievance.objects.get(id=grievance_id)
     history = StatusHistory.objects.filter(grievance=grievance).order_by('created_at')
 
-    # Expected entries: SUBMITTED (from serializer.create) + UNDER_REVIEW (from routing)
-    assert history.count() >= 2, \
-        f"Expected at least 2 StatusHistory entries, got {history.count()}"
+    # After submit: should have initial SUBMITTED entry
+    assert history.count() >= 1, \
+        f"Expected at least 1 StatusHistory entry, got {history.count()}"
+    submitted_entry = history.filter(new_status='SUBMITTED').first()
+    assert submitted_entry is not None, "No StatusHistory entry for SUBMITTED"
 
-    # Find the routing entry (UNDER_REVIEW)
-    routing_entry = history.filter(new_status='UNDER_REVIEW').first()
-    assert routing_entry is not None, "No StatusHistory entry for UNDER_REVIEW transition"
-    assert routing_entry.previous_status == 'SUBMITTED', \
-        f"Expected previous_status=SUBMITTED, got {routing_entry.previous_status}"
-    assert 'Routed to department' in routing_entry.remarks, \
-        f"Remarks should mention routing, got: {routing_entry.remarks}"
+    # HOD reviews
+    hod_client = _auth_client(hod)
+    hod_client.post(f'/api/grievances/{grievance_id}/review/')
+
+    # After review: should also have UNDER_REVIEW entry
+    history = StatusHistory.objects.filter(grievance=grievance).order_by('created_at')
+    under_review_entry = history.filter(new_status='UNDER_REVIEW').first()
+    assert under_review_entry is not None, "No StatusHistory entry for UNDER_REVIEW"
+    assert under_review_entry.previous_status == 'SUBMITTED', \
+        f"Expected previous_status=SUBMITTED, got {under_review_entry.previous_status}"
 
     grievance.delete()
-    user.delete()
+    student.delete()
+    hod.delete()
     cat.delete()
     dept.delete()
-    print("  PASS status history logged on routing")
+    print("  PASS status history logged on submit and review")
 
 
 def test_category_never_affects_routing():
     """
-    The category field is classification-only and must NEVER influence
-    which department a grievance is routed to.  Two grievances in different
-    categories but submitted to the same department should both be routed
-    to that department.
+    Category is classification-only — two grievances in different categories
+    but same department should both route to that department.
     """
     dept = _create_dept()
     cat_a = _create_category()
@@ -239,20 +252,20 @@ def test_category_never_affects_routing():
     client = _auth_client(user)
 
     resp_a = _submit_grievance(client, dept, cat_a,
-                               title='Category A test',
-                               description=_GRIEVANCE_DESCRIPTION + ' Part A.')
+                                title='Category A test',
+                                description=_DESC + ' Part A.')
     assert resp_a.status_code == status.HTTP_201_CREATED
     grievance_a = Grievance.objects.get(id=resp_a.data['id'])
 
     resp_b = _submit_grievance(client, dept, cat_b,
-                               title='Category B test',
-                               description=_GRIEVANCE_DESCRIPTION + ' Part B.')
+                                title='Category B test',
+                                description=_DESC + ' Part B.')
     assert resp_b.status_code == status.HTTP_201_CREATED
     grievance_b = Grievance.objects.get(id=resp_b.data['id'])
 
-    # Both should be UNDER_REVIEW and assigned to the same department
-    assert grievance_a.current_status == 'UNDER_REVIEW'
-    assert grievance_b.current_status == 'UNDER_REVIEW'
+    # Both should be SUBMITTED and assigned to the same department
+    assert grievance_a.current_status == 'SUBMITTED'
+    assert grievance_b.current_status == 'SUBMITTED'
     assert grievance_a.department.pk == dept.pk
     assert grievance_b.department.pk == dept.pk
 
@@ -273,8 +286,7 @@ def test_category_never_affects_routing():
 
 def test_hod_sees_department_grievances():
     """
-    An HOD user should see only grievances that belong to their own
-    department in the list view.
+    An HOD should see only grievances that belong to their own department.
     """
     hod_dept = _create_dept()
     other_dept = _create_dept()
@@ -285,13 +297,13 @@ def test_hod_sees_department_grievances():
 
     grievance = Grievance.objects.create(
         user=student, department=hod_dept, category=cat,
-        title='HOD department grievance', description=_GRIEVANCE_DESCRIPTION,
+        title='HOD department grievance', description=_DESC,
         current_status=Grievance.Status.UNDER_REVIEW,
     )
 
     other_grievance = Grievance.objects.create(
         user=student, department=other_dept, category=cat,
-        title='Other department grievance', description=_GRIEVANCE_DESCRIPTION,
+        title='Other department grievance', description=_DESC,
         current_status=Grievance.Status.UNDER_REVIEW,
     )
 
@@ -299,7 +311,8 @@ def test_hod_sees_department_grievances():
     resp = client.get('/api/grievances/')
     assert resp.status_code == status.HTTP_200_OK
 
-    titles = [g['title'] for g in resp.data]
+    results = resp.data['results'] if isinstance(resp.data, dict) and 'results' in resp.data else resp.data
+    titles = [g['title'] for g in results]
     assert 'HOD department grievance' in titles, \
         "HOD should see grievances from their own department"
     assert 'Other department grievance' not in titles, \
@@ -317,8 +330,7 @@ def test_hod_sees_department_grievances():
 
 def test_hod_cannot_see_other_department():
     """
-    An HOD user must NOT be able to access (via detail view) a grievance
-    that belongs to a department other than their own.
+    An HOD must NOT be able to access a grievance from another department.
     """
     hod_dept = _create_dept()
     other_dept = _create_dept()
@@ -329,14 +341,14 @@ def test_hod_cannot_see_other_department():
 
     grievance = Grievance.objects.create(
         user=student, department=other_dept, category=cat,
-        title='Other dept grievance', description=_GRIEVANCE_DESCRIPTION,
+        title='Other dept grievance', description=_DESC,
         current_status=Grievance.Status.UNDER_REVIEW,
     )
 
     client = _auth_client(hod)
     resp = client.get(f'/api/grievances/{grievance.pk}/')
     assert resp.status_code == status.HTTP_404_NOT_FOUND, \
-        f"Expected 404 for HOD accessing other dept grievance, got {resp.status_code}"
+        f"Expected 404, got {resp.status_code}"
 
     grievance.delete()
     student.delete()
@@ -353,21 +365,22 @@ def test_hod_cannot_see_other_department():
 
 def run():
     setup_db()
+    call_command('flush', verbosity=0, interactive=False)
 
     tests = [
-        ("Route to selected department",        test_route_to_selected_department),
-        ("Route defaults to user department",   test_route_defaults_to_user_department),
-        ("Status changes to UNDER_REVIEW",       test_status_changes_to_under_review),
-        ("StatusHistory logged on routing",      test_status_history_logged_on_routing),
-        ("Category never affects routing",       test_category_never_affects_routing),
-        ("HOD sees department grievances",       test_hod_sees_department_grievances),
-        ("HOD cannot see other department",      test_hod_cannot_see_other_department),
+        ("Route to selected department",           test_route_to_selected_department),
+        ("Route defaults to user department",      test_route_defaults_to_user_department),
+        ("HOD review moves to UNDER_REVIEW",        test_hod_review_moves_to_under_review),
+        ("StatusHistory logged on submit & review", test_status_history_logged_on_submit_and_review),
+        ("Category never affects routing",          test_category_never_affects_routing),
+        ("HOD sees department grievances",          test_hod_sees_department_grievances),
+        ("HOD cannot see other department",         test_hod_cannot_see_other_department),
     ]
 
     passed = 0
     failed = 0
     print(f"\n{'='*60}")
-    print("  Phase 5 - Grievance Routing")
+    print("  Phase 5 - Grievance Routing & Review")
     print(f"{'='*60}\n")
     for label, fn in tests:
         try:

@@ -10,10 +10,10 @@ class GrievancesConfig(AppConfig):
 
     def ready(self):
         # ------------------------------------------------------------------
-        # Wire up the pre_save signal for automatic StatusHistory logging
+        # Wire up the post_save signal for automatic StatusHistory logging
         # ------------------------------------------------------------------
         # pylint: disable=unused-import,import-outside-toplevel
-        import grievances.signals  # noqa: F401
+        import grievances.services.audit.status_history  # noqa: F401
 
         # ------------------------------------------------------------------
         # Start APScheduler for auto-escalation (only in the main process)
@@ -38,7 +38,7 @@ class GrievancesConfig(AppConfig):
             from apscheduler.schedulers.background import BackgroundScheduler
             from apscheduler.triggers.interval import IntervalTrigger
 
-            from grievances.services.escalation_service import run_escalation_cycle
+            from grievances.services.escalation import run_escalation_cycle
 
             interval = getattr(settings, 'ESCALATION_INTERVAL_MINUTES', 60)
             scheduler = BackgroundScheduler(daemon=True)

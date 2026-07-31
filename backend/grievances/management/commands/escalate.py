@@ -10,7 +10,7 @@ For the automatic hourly cycle, APScheduler is started in ``apps.py``.
 
 from django.core.management.base import BaseCommand
 
-from grievances.services.escalation_service import (
+from grievances.services.escalation import (
     find_stale_grievances,
     escalate,
     get_escalation_hours,

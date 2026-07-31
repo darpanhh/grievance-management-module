@@ -2,15 +2,21 @@
 Signal handlers for the Grievance application.
 
 Auto-logs StatusHistory entries whenever a Grievance's ``current_status``
-field changes via a pre_save signal.  Callers can attach ``_action_by``
-(User instance) and ``_action_remarks`` (str) to the instance before saving
-to control who triggered the transition and what note is recorded.
+field changes.  Uses ``pre_save`` to capture the *previous* status (the
+database still holds the old value at that point) and
+``transaction.on_commit`` so the audit row is never written unless the
+surrounding transaction actually commits.
+
+Callers can attach ``_action_by`` (User instance) and
+``_action_remarks`` (str) to the instance before saving to control who
+triggered the transition and what note is recorded.
 """
 
+from django.db import transaction
 from django.db.models.signals import pre_save
 from django.dispatch import receiver
 
-from .models import Grievance, StatusHistory
+from grievances.models import Grievance, StatusHistory
 
 
 @receiver(pre_save, sender=Grievance)
@@ -19,9 +25,15 @@ def log_status_change(sender, instance, **kwargs):
     Auto-log a StatusHistory entry when a grievance's ``current_status``
     field changes between the database state and the in-memory state.
 
-    The signal does **not** fire for new instances (``pk is None``) —
-    StatusHistory for the initial SUBMITTED status is created by the
-    ``GrievanceCreateSerializer``.
+    ``pre_save`` fires *before* the UPDATE, so the database still holds
+    the previous status — that is what makes old/new comparison correct.
+    The actual ``StatusHistory`` insert is deferred with
+    ``transaction.on_commit`` so a rolled-back save never leaves an
+    orphan audit record.
+
+    The signal does **not** create an entry for new instances
+    (``pk is None``) — StatusHistory for the initial SUBMITTED status is
+    created by the ``GrievanceCreateSerializer``.
 
     Callers may set ``instance._action_by`` (User) and
     ``instance._action_remarks`` (str) **before** calling ``save()``
@@ -51,10 +63,14 @@ def log_status_change(sender, instance, **kwargs):
             f"{instance.get_current_status_display() or new_status}."
         )
 
-    StatusHistory.objects.create(
+    action_by = getattr(instance, '_action_by', None)
+
+    # Defer the audit-log insert until the transaction commits so we
+    # never record a transition that might roll back.
+    transaction.on_commit(lambda: StatusHistory.objects.create(
         grievance=instance,
         previous_status=old_status,
         new_status=new_status,
-        action_by=getattr(instance, '_action_by', None),
+        action_by=action_by,
         remarks=remarks,
-    )
+    ))

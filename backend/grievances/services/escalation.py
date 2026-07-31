@@ -21,7 +21,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 from accounts.models import User
-from grievances.models import Grievance, StatusHistory
+from grievances.models import Grievance
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,8 @@ def find_stale_grievances() -> list[Grievance]:
     cutoff = timezone.now() - timezone.timedelta(hours=hours)
 
     eligible_statuses = [
+        Grievance.Status.SUBMITTED,
         Grievance.Status.UNDER_REVIEW,
-        Grievance.Status.RESPONDED,
         Grievance.Status.REOPENED,
     ]
 
@@ -92,7 +92,6 @@ def escalate(grievance: Grievance) -> bool:
         return False
 
     admin_name = next_officer.get_full_name() or next_officer.username
-    previous_status = grievance.current_status
 
     # Set escalation fields and status
     grievance.escalation_level = 1
@@ -107,18 +106,6 @@ def escalate(grievance: Grievance) -> bool:
         'escalation_level', 'escalated_to',
         'current_status', 'updated_at',
     ])
-
-    # Explicit StatusHistory entry for clarity
-    StatusHistory.objects.create(
-        grievance=grievance,
-        previous_status=previous_status,
-        new_status=Grievance.Status.ESCALATED,
-        action_by=None,
-        remarks=(
-            f"Escalated — assigned to {admin_name} "
-            f"after {get_escalation_hours()} hours without update."
-        ),
-    )
 
     # Send email
     send_escalation_email(grievance, next_officer)

@@ -43,7 +43,9 @@ def _create_dept(name=None):
     return Department.objects.create(name=name, department_type='ACADEMIC')
 
 
-def _create_category(name='Examination'):
+def _create_category(name=None):
+    if name is None:
+        name = f'Category {uuid.uuid4().hex[:8]}'
     return Category.objects.create(name=name, description='Test category')
 
 
@@ -86,6 +88,17 @@ def test_list_departments():
 # Grievance CRUD
 # ---------------------------------------------------------------------------
 
+# Long realistic description so the AI spam detector classifies as legitimate
+_DESC = (
+    "I am writing to bring to your attention an issue with the examination "
+    "results for the subject of Data Structures. The grade displayed in the "
+    "system does not match the marks I received in my answer sheet. I have "
+    "attached a copy of my answer sheet for reference. Please look into this "
+    "matter and update the records accordingly. Thank you for your time and "
+    "consideration."
+)
+
+
 def test_submit_grievance():
     """POST /api/grievances/ creates a grievance."""
     dept = _create_dept()
@@ -95,7 +108,7 @@ def test_submit_grievance():
 
     resp = client.post('/api/grievances/', {
         'title': 'Test grievance',
-        'description': 'This is a test grievance for unit testing.',
+        'description': _DESC,
         'category': cat.pk,
         'department': dept.pk,
         'is_anonymous': False,
@@ -103,7 +116,7 @@ def test_submit_grievance():
 
     assert resp.status_code == status.HTTP_201_CREATED, f"Got {resp.status_code}: {resp.data}"
     assert resp.data['title'] == 'Test grievance'
-    assert resp.data['current_status'] == 'SUBMITTED'  # Phase 4 marks spam but Phase 3 doesn't have AI yet
+    assert resp.data['current_status'] == 'SUBMITTED'
 
     Grievance.objects.filter(id=resp.data['id']).delete()
     user.delete()
@@ -121,7 +134,7 @@ def test_submit_grievance_anonymous():
 
     resp = client.post('/api/grievances/', {
         'title': 'Anonymous grievance',
-        'description': 'This is an anonymous test grievance.',
+        'description': _DESC,
         'category': cat.pk,
         'department': dept.pk,
         'is_anonymous': True,
@@ -142,6 +155,11 @@ def test_submit_grievance_anonymous():
     print("  PASS submit grievance (anonymous)")
 
 
+def _results(data):
+    """Extract the results list from a paginated DRF response."""
+    return data['results'] if isinstance(data, dict) and 'results' in data else data
+
+
 def test_list_grievances_student():
     """Student sees only their own grievances in the list."""
     dept = _create_dept()
@@ -155,7 +173,7 @@ def test_list_grievances_student():
     client = _auth_client(user1)
     resp = client.get('/api/grievances/')
     assert resp.status_code == status.HTTP_200_OK
-    titles = [g['title'] for g in resp.data]
+    titles = [g['title'] for g in _results(resp.data)]
     assert 'User1 grievance' in titles, "Student should see own grievance"
     assert 'User2 grievance' not in titles, "Student should NOT see other's grievance"
 
@@ -164,24 +182,32 @@ def test_list_grievances_student():
     print("  PASS list grievances (student scoped)")
 
 
-def test_list_grievances_admin():
-    """Campus Admin sees all grievances."""
+def test_list_grievances_campus_admin():
+    """Campus Admin only sees ESCALATED grievances."""
     dept = _create_dept()
     cat = _create_category()
-    user = User.objects.create_user(username='list_admin', password='testpass123', role='STUDENT', department=dept)
+    user = User.objects.create_user(username='list_ca', password='testpass123', role='STUDENT', department=dept)
     admin = User.objects.create_user(username='campus_admin', password='admin123', role='CAMPUS_ADMIN')
 
-    Grievance.objects.create(user=user, department=dept, category=cat, title='Admin grievance', description='Test')
+    # Create an ESCALATED grievance (CAMPUS_ADMIN only sees ESCALATED)
+    Grievance.objects.create(user=user, department=dept, category=cat,
+                              title='Escalated grievance', description='Test',
+                              current_status='ESCALATED')
+    # Also create a non-escalated one (should NOT appear)
+    Grievance.objects.create(user=user, department=dept, category=cat,
+                              title='Non-escalated grievance', description='Test')
 
     client = _auth_client(admin, 'admin123')
     resp = client.get('/api/grievances/')
     assert resp.status_code == status.HTTP_200_OK
-    titles = [g['title'] for g in resp.data]
-    assert 'Admin grievance' in titles, "Admin should see all grievances"
+    titles = [g['title'] for g in _results(resp.data)]
+    assert 'Escalated grievance' in titles, "CAMPUS_ADMIN should see ESCALATED grievances"
+    assert 'Non-escalated grievance' not in titles, \
+        "CAMPUS_ADMIN should NOT see non-escalated grievances"
 
     Grievance.objects.all().delete()
     admin.delete(); user.delete(); cat.delete(); dept.delete()
-    print("  PASS list grievances (admin scoped)")
+    print("  PASS list grievances (CAMPUS_ADMIN only ESCALATED)")
 
 
 def test_grievance_detail():
@@ -354,6 +380,7 @@ def test_anonymous_tracking_invalid_code():
 
 def run():
     setup_db()
+    call_command('flush', verbosity=0, interactive=False)
 
     tests = [
         ("List categories (public)",               test_list_categories),
@@ -361,7 +388,7 @@ def run():
         ("Submit grievance",                       test_submit_grievance),
         ("Submit grievance (anonymous)",           test_submit_grievance_anonymous),
         ("List grievances (student scoped)",       test_list_grievances_student),
-        ("List grievances (admin scoped)",         test_list_grievances_admin),
+        ("List grievances (CAMPUS_ADMIN only ESCALATED)", test_list_grievances_campus_admin),
         ("Grievance detail",                       test_grievance_detail),
         ("Rate limit blocks after 3",              test_rate_limit_blocks_after_3),
         ("Description validation",                 test_description_validation),

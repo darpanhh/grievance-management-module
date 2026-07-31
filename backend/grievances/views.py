@@ -7,8 +7,8 @@ Phase 4: AI Spam Filtering
   - Appeal mechanism for submitters
 
 Phase 5: Grievance Routing
-  - Automatic routing to selected (or submitter's) department after submission
-  - Submission pipeline transitions SUBMITTED -> UNDER_REVIEW (when not spam)
+  - Department assignment via routing (status stays SUBMITTED)
+  - HOD manually starts review via POST .../review/
 """
 
 import csv
@@ -26,7 +26,6 @@ from rest_framework.response import Response
 
 from accounts.models import Department
 from .models import AIAnalysis, Category, Grievance, StatusHistory
-from .permissions import IsCampusAdmin
 from .serializers import (
     AIAnalysisSerializer,
     CategorySerializer,
@@ -35,11 +34,12 @@ from .serializers import (
     GrievanceDetailSerializer,
     GrievanceListSerializer,
     GrievanceTrackSerializer,
+    StatusHistorySerializer,
 )
 from .services.spam_detector import MLSpamDetector
 from .services.routing import route_grievance
-from .services.audit_logger import audit_log
-from .services.escalation_service import (
+from .services.audit.audit_logger import audit_log
+from .services.escalation import (
     send_submission_email,
     send_response_email,
     send_resolution_email,
@@ -125,7 +125,10 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
             qs = qs.filter(user=user)
         elif user.role == 'HOD':
             qs = qs.filter(department=user.department)
-        # CAMPUS_ADMIN sees everything — no additional filter
+        elif user.role == 'CAMPUS_ADMIN':
+            qs = qs.filter(current_status=Grievance.Status.ESCALATED)
+        # Exclude SPAM from the main inbox (spam has its own tab, like Gmail)
+        qs = qs.exclude(current_status=Grievance.Status.SPAM)
 
         return qs.order_by('-created_at')
 
@@ -221,33 +224,22 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
             classification_reason=result['classification_reason'],
         )
 
+        # Assign department via routing (runs for both spam and non-spam)
+        route_grievance(
+            grievance,
+            action_by=request.user,
+        )
+
         if result['spam_prediction']:
-            # Mark as spam and log the transition
+            # Mark as spam — the signal auto-logs StatusHistory
+            grievance._action_by = request.user
+            grievance._action_remarks = (
+                f"Flagged as spam by AI detector "
+                f"(confidence: {result['confidence_score']:.2f}). "
+                f"{result['classification_reason']}"
+            )
             grievance.current_status = Grievance.Status.SPAM
             grievance.save(update_fields=['current_status'])
-
-            StatusHistory.objects.create(
-                grievance=grievance,
-                previous_status=Grievance.Status.SUBMITTED,
-                new_status=Grievance.Status.SPAM,
-                action_by=request.user,
-                remarks=(
-                    f"Flagged as spam by AI detector "
-                    f"(confidence: {result['confidence_score']:.2f}). "
-                    f"{result['classification_reason']}"
-                ),
-            )
-        else:
-            # --------------------------------------------------------------
-            # Phase 5 — Automatic Routing
-            # --------------------------------------------------------------
-            # Only route non-spam grievances.  The routing service is
-            # responsible for setting the target department (selected or
-            # fallback) and transitioning the status to UNDER_REVIEW.
-            route_grievance(
-                grievance,
-                action_by=request.user,
-            )
 
         # Build response data
         data = GrievanceDetailSerializer(grievance, context={'request': request}).data
@@ -309,7 +301,8 @@ class GrievanceDetailView(generics.RetrieveAPIView):
             qs = qs.filter(user=user)
         elif user.role in ('STAFF', 'HOD'):
             qs = qs.filter(department=user.department)
-        # CAMPUS_ADMIN sees everything
+        elif user.role == 'CAMPUS_ADMIN':
+            qs = qs.filter(current_status=Grievance.Status.ESCALATED)
 
         return qs
 
@@ -363,47 +356,55 @@ def grievance_track(request):
 
 
 # ---------------------------------------------------------------------------
-# Phase 4 — AI Spam Filtering: Admin Queue & Appeal
+# Phase 4 — AI Spam Filtering: Spam Tab & Appeal
 # ---------------------------------------------------------------------------
 
 
 class SpamQueueView(generics.ListAPIView):
     """
-    GET /api/admin/spam-queue/
+    GET /api/spam/
 
-    Lists all grievances currently classified as SPAM.  Campus Admin only.
+    Lists spam grievances for the HOD's own department (like Gmail's
+    spam tab).  The HOD can review and accept spam directly by calling
+    ``POST /api/grievances/{pk}/review/`` (which accepts SPAM →
+    UNDER_REVIEW).
 
-    Returns a paginated list with the spam confidence score and reason
-    so the admin can decide whether to reinstate or confirm the spam
-    classification.
+    Role-based scoping:
+      - STUDENT:      Own grievances only
+      - HOD / STAFF:  Only spam in the user's department
     """
 
     serializer_class = GrievanceListSerializer
-    permission_classes = (permissions.IsAuthenticated, IsCampusAdmin)
-    pagination_class = None  # Spam queue is typically small
+    permission_classes = (permissions.IsAuthenticated,)
+    pagination_class = None
 
     def get_queryset(self):
-        return Grievance.objects.filter(
+        user = self.request.user
+        qs = Grievance.objects.filter(
             current_status=Grievance.Status.SPAM,
         ).select_related(
             'category', 'department', 'user',
         ).order_by('-updated_at')
+
+        if user.role == 'STUDENT':
+            qs = qs.filter(user=user)
+        elif user.role in ('HOD', 'STAFF'):
+            qs = qs.filter(department=user.department)
+
+        return qs
 
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def reinstate_spam(request, pk):
     """
-    POST /api/admin/spam-queue/{pk}/reinstate/
+    POST /api/grievances/{pk}/reinstate-spam/
 
-    Campus Admin only.  Reverses the spam classification — transitions the
-    grievance from SPAM back to SUBMITTED so it can enter the normal
-    routing workflow.
-
-    Logs a StatusHistory entry for the transition.
+    HOD (or Staff) can reinstate a spam grievance in their own department.
+    Transitions SPAM → SUBMITTED so it enters the normal review flow.
     """
-    if request.user.role != 'CAMPUS_ADMIN':
-        raise PermissionDenied('Only Campus Admins can reinstate grievances.')
+    if request.user.role not in ('HOD', 'STAFF'):
+        raise PermissionDenied('Only HODs or Staff can reinstate grievances.')
 
     grievance = get_object_or_404(
         Grievance.objects.select_related('ai_analysis'),
@@ -411,36 +412,38 @@ def reinstate_spam(request, pk):
         current_status=Grievance.Status.SPAM,
     )
 
+    # Scoping — only own department
+    if grievance.department != request.user.department:
+        raise PermissionDenied(
+            'You can only reinstate grievances in your own department.'
+        )
+
     # Update the AI analysis record to reflect the override
     try:
         ai = grievance.ai_analysis
         ai.spam_prediction = False
         ai.classification_reason = (
-            f"Overridden by admin ({request.user.get_full_name() or request.user.username}). "
+            f"Overridden by {request.user.get_full_name() or request.user.username}. "
             f"Original result: {ai.classification_reason}"
         )
         ai.save(update_fields=['spam_prediction', 'classification_reason'])
     except AIAnalysis.DoesNotExist:
         pass
 
-    # Transition status
-    previous = grievance.current_status
+    # Transition status — the signal auto-logs StatusHistory
+    grievance._action_by = request.user
+    grievance._action_remarks = (
+        f"Grievance reinstated from spam by "
+        f"{request.user.get_full_name() or request.user.username}."
+    )
     grievance.current_status = Grievance.Status.SUBMITTED
     grievance.save(update_fields=['current_status'])
-
-    StatusHistory.objects.create(
-        grievance=grievance,
-        previous_status=previous,
-        new_status=Grievance.Status.SUBMITTED,
-        action_by=request.user,
-        remarks='Grievance reinstated by Campus Admin — spam classification overridden.',
-    )
 
     audit_log(
         request=request,
         action='REINSTATE_SPAM',
         grievance_id=grievance.id,
-        details=f'Campus Admin reinstated grievance from spam',
+        details=f'{request.user.role} reinstated grievance from spam',
         old_status='SPAM',
         new_status='SUBMITTED',
         result='SUCCESS',
@@ -503,6 +506,71 @@ def appeal_spam(request, pk):
 
 
 # ---------------------------------------------------------------------------
+# Manual Review — Move SUBMITTED → UNDER_REVIEW
+# ---------------------------------------------------------------------------
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def start_review(request, pk):
+    """
+    POST /api/grievances/{pk}/review/
+
+    Moves a grievance to UNDER_REVIEW:
+
+      - HOD / STAFF:     SUBMITTED → UNDER_REVIEW
+      - CAMPUS_ADMIN:    ESCALATED → UNDER_REVIEW (picks up escalated grievance)
+    """
+    grievance = get_object_or_404(Grievance, pk=pk)
+
+    if request.user.role not in ('HOD', 'STAFF', 'CAMPUS_ADMIN'):
+        raise PermissionDenied(
+            'Only HODs, Staff, or Campus Admins can start a review.'
+        )
+
+    if request.user.role == 'CAMPUS_ADMIN':
+        if grievance.current_status != Grievance.Status.ESCALATED:
+            return Response(
+                {'error': 'Admins can only review escalated grievances.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    else:
+        # HOD / STAFF — only SUBMITTED or SPAM grievances in their department
+        if grievance.current_status not in (
+            Grievance.Status.SUBMITTED,
+            Grievance.Status.SPAM,
+        ):
+            return Response(
+                {'error': 'Grievance must be in SUBMITTED or SPAM status to start review.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if grievance.department != request.user.department:
+            raise PermissionDenied(
+                'You can only review grievances in your own department.'
+            )
+
+    grievance._action_by = request.user
+    grievance._action_remarks = (
+        f"Review started by {request.user.get_full_name() or request.user.username}."
+    )
+    grievance.current_status = Grievance.Status.UNDER_REVIEW
+    grievance.save(update_fields=['current_status'])
+
+    audit_log(
+        request=request,
+        action='START_REVIEW',
+        grievance_id=grievance.id,
+        details=f'{request.user.role} started review of grievance',
+        old_status='SUBMITTED',
+        new_status='UNDER_REVIEW',
+        result='SUCCESS',
+    )
+
+    detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
+    return Response(detail, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
 # Phase 6 — Response & Escalation Workflow
 # ---------------------------------------------------------------------------
 
@@ -512,6 +580,7 @@ VALID_TRANSITIONS = {
         Grievance.Status.SPAM,
     },
     Grievance.Status.SPAM: {
+        Grievance.Status.UNDER_REVIEW,
         Grievance.Status.SUBMITTED,
         Grievance.Status.CLOSED,
     },
@@ -529,10 +598,11 @@ VALID_TRANSITIONS = {
         Grievance.Status.ESCALATED,
     },
     Grievance.Status.ESCALATED: {
-        Grievance.Status.RESOLVED,
+        Grievance.Status.UNDER_REVIEW,
     },
     Grievance.Status.RESOLVED: {
         Grievance.Status.CLOSED,
+        Grievance.Status.REOPENED,
     },
     Grievance.Status.CLOSED: set(),
 }
@@ -555,14 +625,17 @@ def respond_to_grievance(request, pk):
     """
     POST /api/grievances/{pk}/respond/
 
-    Allows an HOD to respond to a grievance that is UNDER_REVIEW or
-    REOPENED.  The HOD must belong to the grievance's assigned department.
+    Allows an HOD or Campus Admin to respond to a grievance that is
+    UNDER_REVIEW or REOPENED.
 
-    Creates a ``Response`` record and transitions the grievance status
-    to RESPONDED.
+      - HOD:           Must belong to the grievance's department
+      - CAMPUS_ADMIN:  Can respond to any grievance (e.g. after picking
+                       up an escalation via review)
+
+    Creates a ``Response`` record and transitions the status to RESPONDED.
     """
-    if request.user.role != 'HOD':
-        raise PermissionDenied('Only HODs can respond to grievances.')
+    if request.user.role not in ('HOD', 'CAMPUS_ADMIN'):
+        raise PermissionDenied('Only HODs or Campus Admins can respond to grievances.')
 
     grievance = get_object_or_404(
         Grievance.objects.select_related('department'),
@@ -570,10 +643,11 @@ def respond_to_grievance(request, pk):
     )
 
     # HOD must belong to the grievance's department
-    if grievance.department != request.user.department:
-        raise PermissionDenied(
-            'You can only respond to grievances in your own department.'
-        )
+    if request.user.role == 'HOD':
+        if grievance.department != request.user.department:
+            raise PermissionDenied(
+                'You can only respond to grievances in your own department.'
+            )
 
     if grievance.current_status not in (
         Grievance.Status.UNDER_REVIEW,
@@ -638,30 +712,36 @@ def resolve_grievance(request, pk):
     """
     POST /api/grievances/{pk}/resolve/
 
-    Allows the original submitter to resolve their own grievance when
-    the status is RESPONDED.  Transitions to RESOLVED.
+    Allows the original submitter to progress their grievance:
+
+      - RESPONDED → RESOLVED  (satisfied with HOD's response)
+      - RESOLVED  → CLOSED    (satisfied with admin's escalation resolution)
     """
     grievance = get_object_or_404(Grievance, pk=pk)
 
     if grievance.user != request.user:
         raise PermissionDenied('You can only resolve your own grievance.')
 
-    if grievance.current_status != Grievance.Status.RESPONDED:
-        return Response(
-            {'error': 'Grievance must be in RESPONDED status to resolve.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
     previous_status = grievance.current_status
 
-    # Transition status (signal auto-logs StatusHistory)
-    grievance._action_by = request.user
-    grievance._action_remarks = 'Resolved by the submitter.'
-    grievance.current_status = Grievance.Status.RESOLVED
-    grievance.save(update_fields=['current_status'])
+    if previous_status == Grievance.Status.RESPONDED:
+        grievance._action_by = request.user
+        grievance._action_remarks = 'Resolved by the submitter.'
+        grievance.current_status = Grievance.Status.RESOLVED
+        grievance.save(update_fields=['current_status'])
+        send_resolution_email(grievance)
 
-    # Notify the submitter about the resolution
-    send_resolution_email(grievance)
+    elif previous_status == Grievance.Status.RESOLVED:
+        grievance._action_by = request.user
+        grievance._action_remarks = 'Closed by the submitter.'
+        grievance.current_status = Grievance.Status.CLOSED
+        grievance.save(update_fields=['current_status'])
+
+    else:
+        return Response(
+            {'error': 'Grievance must be in RESPONDED or RESOLVED status to resolve/close.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     audit_log(
         request=request,
@@ -683,18 +763,24 @@ def reopen_grievance(request, pk):
     """
     POST /api/grievances/{pk}/reopen/
 
-    Allows the original submitter to reopen their grievance when the
-    status is RESPONDED.  Sets ``is_reopened=True`` and transitions
-    to REOPENED.
+    Allows the original submitter to reopen their grievance:
+
+      - RESPONDED → REOPENED  (not satisfied with HOD's response)
+      - RESOLVED  → REOPENED  (not satisfied with admin's escalation resolution)
+
+    Sets ``is_reopened=True`` for audit purposes.
     """
     grievance = get_object_or_404(Grievance, pk=pk)
 
     if grievance.user != request.user:
         raise PermissionDenied('You can only reopen your own grievance.')
 
-    if grievance.current_status != Grievance.Status.RESPONDED:
+    if grievance.current_status not in (
+        Grievance.Status.RESPONDED,
+        Grievance.Status.RESOLVED,
+    ):
         return Response(
-            {'error': 'Grievance must be in RESPONDED status to reopen.'},
+            {'error': 'Grievance must be in RESPONDED or RESOLVED status to reopen.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -721,74 +807,71 @@ def reopen_grievance(request, pk):
     return Response(detail, status=status.HTTP_200_OK)
 
 
-@api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
-def admin_resolve_escalated(request, pk):
+# ---------------------------------------------------------------------------
+# Status History — Audit Trail
+# ---------------------------------------------------------------------------
+
+
+class StatusHistoryListView(generics.ListAPIView):
     """
-    POST /api/admin/escalated/{pk}/resolve/
+    GET /api/status-history/
 
-    Allows a Campus Admin to resolve an escalated grievance.  This is a
-    final resolution — no submitter check is needed.
+    Returns the full audit trail of grievance status transitions.
+    Supports the following query-parameter filters:
 
-    Per the implementation plan (§7.4):
-      1. Creates a Response record (from Campus Admin)
-      2. Transitions ESCALATED → RESOLVED
-      3. Auto-closes: RESOLVED → CLOSED (final — no submitter check)
+      - grievance (int)  — filter by grievance ID
+      - status (str)     — filter by ``new_status`` value (e.g. RESOLVED)
+      - date_from (str)  — filter by created_at >= date (YYYY-MM-DD)
+      - date_to (str)    — filter by created_at <= date (YYYY-MM-DD)
+
+    Role-based scoping:
+      - STUDENT:       Only transitions for the user's own grievances
+      - STAFF / HOD:   Only transitions for grievances in the user's department
+      - CAMPUS_ADMIN:  All transitions
     """
-    if request.user.role != 'CAMPUS_ADMIN':
-        raise PermissionDenied('Only Campus Admins can resolve escalated grievances.')
 
-    grievance = get_object_or_404(Grievance, pk=pk)
+    serializer_class = StatusHistorySerializer
+    permission_classes = (permissions.IsAuthenticated,)
+    filterset_fields = ['new_status', 'previous_status', 'grievance']
 
-    if grievance.current_status != Grievance.Status.ESCALATED:
-        return Response(
-            {'error': 'Grievance must be in ESCALATED status.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    def get_queryset(self):
+        user = self.request.user
 
-    admin_name = request.user.get_full_name() or request.user.username
+        qs = StatusHistory.objects.select_related(
+            'grievance', 'action_by',
+        ).order_by('-created_at')
 
-    # 1. Create a Response record from the Campus Admin
-    content = request.data.get('content', '').strip()
-    if content:
-        from .models import Response as GrievanceResponse
-        GrievanceResponse.objects.create(
-            grievance=grievance,
-            responder=request.user,
-            content=content,
-        )
+        if user.role == 'STUDENT':
+            qs = qs.filter(grievance__user=user)
+        elif user.role in ('STAFF', 'HOD'):
+            dept = user.department
+            if dept:
+                qs = qs.filter(grievance__department=dept)
+            else:
+                qs = qs.none()
+        # CAMPUS_ADMIN — no filter, sees everything
 
-    # 2. Transition ESCALATED → RESOLVED (signal auto-logs StatusHistory)
-    grievance._action_by = request.user
-    grievance._action_remarks = (
-        f"Escalated grievance resolved by Campus Admin {admin_name}."
-    )
-    grievance.current_status = Grievance.Status.RESOLVED
-    grievance.save(update_fields=['current_status'])
+        # Apply query-parameter filters
+        params = self.request.query_params
 
-    # 3. Auto-close: RESOLVED → CLOSED (no submitter check needed — final)
-    grievance._action_by = request.user
-    grievance._action_remarks = (
-        f"Auto-closed after Campus Admin {admin_name} resolved the escalated grievance."
-    )
-    grievance.current_status = Grievance.Status.CLOSED
-    grievance.save(update_fields=['current_status'])
+        grievance_id = params.get('grievance')
+        if grievance_id:
+            qs = qs.filter(grievance_id=grievance_id)
 
-    # Notify the submitter about the resolution
-    send_resolution_email(grievance)
+        status_val = params.get('status')
+        if status_val:
+            qs = qs.filter(new_status=status_val.upper())
 
-    audit_log(
-        request=request,
-        action='ADMIN_RESOLVE_ESCALATED',
-        grievance_id=grievance.id,
-        details=f'Campus Admin resolved escalated grievance',
-        old_status='ESCALATED',
-        new_status='CLOSED',
-        result='SUCCESS',
-    )
+        date_from = params.get('date_from')
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
 
-    detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
-    return Response(detail, status=status.HTTP_200_OK)
+        date_to = params.get('date_to')
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+
+        return qs
+
 
 # ---------------------------------------------------------------------------
 # Phase 7 — Dashboards, Search & Export
@@ -916,7 +999,7 @@ class AdminDashboardView(generics.GenericAPIView):
       - The 10 most recently updated grievances
     """
 
-    permission_classes = (permissions.IsAuthenticated, IsCampusAdmin)
+    permission_classes = (permissions.IsAuthenticated, permissions.IsAdminUser)
 
     def get(self, request, *args, **kwargs):
         qs = Grievance.objects.all()
@@ -958,12 +1041,12 @@ class AdminDashboardView(generics.GenericAPIView):
 
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated, IsCampusAdmin])
+@permission_classes([permissions.IsAuthenticated, permissions.IsAdminUser])
 def export_grievances(request):
     """
     GET /api/reports/export/?format=csv
 
-    Exports grievances as a CSV file.  Campus Admin only.
+    Exports grievances as a CSV file.  Django system admin only.
 
     Supports optional query-parameter filters:
       - department (int)  — filter by department ID

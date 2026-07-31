@@ -63,11 +63,16 @@ def _create_category():
     return Category.objects.create(name=f'Cat {_next()}', description='Test category')
 
 
-def _create_user(username, role='STUDENT', department=None, password='testpass123'):
-    return User.objects.create_user(
+def _create_user(username, role='STUDENT', department=None, password='testpass123', is_superuser=False):
+    user = User.objects.create_user(
         username=f'{username}_{_next()}', password=password,
         role=role, department=department,
     )
+    if is_superuser:
+        user.is_superuser = True
+        user.is_staff = True
+        user.save(update_fields=['is_superuser', 'is_staff'])
+    return user
 
 
 def _auth_client(user, password='testpass123'):
@@ -175,10 +180,10 @@ def test_department_dashboard():
 
 
 def test_admin_dashboard():
-    """Campus Admin sees system-wide stats."""
+    """Django superuser sees system-wide stats."""
     dept = _create_dept()
     cat = _create_category()
-    admin = _create_user('adm_dsh', role='CAMPUS_ADMIN')
+    admin = _create_user('adm_dsh', role='STUDENT', is_superuser=True)
     student = _create_user('stu_dsh3', role='STUDENT', department=dept)
 
     g1 = _create_grievance(student, dept, cat, Grievance.Status.RESOLVED,
@@ -390,10 +395,10 @@ def test_ordering():
 
 
 def test_export_csv():
-    """CSV export returns correct headers and data."""
+    """CSV export returns correct headers and data (Django superuser only)."""
     dept = _create_dept()
     cat = _create_category()
-    admin = _create_user('exp_adm', role='CAMPUS_ADMIN')
+    admin = _create_user('exp_adm', role='STUDENT', is_superuser=True)
     student = _create_user('exp_stu', role='STUDENT', department=dept)
 
     grievance = _create_grievance(student, dept, cat, Grievance.Status.RESOLVED,
@@ -435,7 +440,7 @@ def test_export_filters():
     dept1 = _create_dept('Export Dept 1')
     dept2 = _create_dept('Export Dept 2')
     cat = _create_category()
-    admin = _create_user('expflt_adm', role='CAMPUS_ADMIN')
+    admin = _create_user('expflt_adm', role='STUDENT', is_superuser=True)
     student = _create_user('expflt_stu', role='STUDENT', department=dept1)
 
     g1 = _create_grievance(student, dept1, cat, Grievance.Status.UNDER_REVIEW,
@@ -469,7 +474,7 @@ def test_export_excludes_anonymous_identity():
     """Anonymous submitter name excluded from export."""
     dept = _create_dept()
     cat = _create_category()
-    admin = _create_user('expanon_adm', role='CAMPUS_ADMIN')
+    admin = _create_user('expanon_adm', role='STUDENT', is_superuser=True)
     student = _create_user('expanon_stu', role='STUDENT', department=dept)
 
     grievance = Grievance.objects.create(
@@ -507,9 +512,21 @@ def test_export_excludes_anonymous_identity():
 
 
 def test_non_admin_cannot_export():
-    """Only Campus Admin can access export."""
+    """Only Django superuser can access export."""
     dept = _create_dept()
     cat = _create_category()
+    # Test with a CAMPUS_ADMIN role (which is NOT a Django superuser)
+    campus_admin = _create_user('expna_ca', role='CAMPUS_ADMIN')
+
+    client = _auth_client(campus_admin)
+    resp = client.get('/api/reports/export/')
+
+    assert resp.status_code in (status.HTTP_403_FORBIDDEN,), \
+        f"Expected 403 for CAMPUS_ADMIN (not superuser), got {resp.status_code}"
+
+    campus_admin.delete()
+
+    # Also test with a regular student
     student = _create_user('expna_stu', role='STUDENT', department=dept)
 
     client = _auth_client(student)

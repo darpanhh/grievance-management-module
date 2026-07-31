@@ -239,28 +239,38 @@ def test_student_denied_admin():
         'username': uname, 'password': 'testpass123',
     }, format='json')
     client.credentials(HTTP_AUTHORIZATION=f'Bearer {login_resp.data["access"]}')
-    resp = client.get('/api/admin/spam-queue/')
-    assert resp.status_code == status.HTTP_403_FORBIDDEN, \
-        f"Student should get 403, got {resp.status_code}"
+
+    # Student can access /api/spam/ but only their own (returns 200, not 403)
+    resp = client.get('/api/spam/')
+    assert resp.status_code == status.HTTP_200_OK, \
+        f"Student should get 200 for spam list, got {resp.status_code}"
+
+    # Student cannot access admin dashboard (requires IsAdminUser)
+    resp = client.get('/api/dashboard/admin/')
+    assert resp.status_code in (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND), \
+        f"Student should be denied admin dashboard, got {resp.status_code}"
+
     User.objects.filter(username=uname).delete()
     dept.delete()
     print("  PASS student denied admin access")
 
 
-def test_admin_can_access_spam_queue():
-    """Campus Admin can access the spam queue."""
-    uname = _uid('admin_test')
-    _create_user(uname, role='CAMPUS_ADMIN', password='adminpass123')
+def test_hod_can_access_spam():
+    """HOD can access the spam list for their department."""
+    uname = _uid('hod_spam')
+    dept = _create_dept()
+    _create_user(uname, role='HOD', dept=dept, password='hodpass123')
     client = APIClient()
     login_resp = client.post('/api/auth/login/', {
-        'username': uname, 'password': 'adminpass123',
+        'username': uname, 'password': 'hodpass123',
     }, format='json')
     client.credentials(HTTP_AUTHORIZATION=f'Bearer {login_resp.data["access"]}')
-    resp = client.get('/api/admin/spam-queue/')
+    resp = client.get('/api/spam/')
     assert resp.status_code == status.HTTP_200_OK, \
-        f"Admin should get 200, got {resp.status_code}"
+        f"HOD should get 200, got {resp.status_code}"
     User.objects.filter(username=uname).delete()
-    print("  PASS admin can access spam queue")
+    dept.delete()
+    print("  PASS HOD can access spam tab")
 
 
 def run():
@@ -277,7 +287,7 @@ def run():
         ("Patch profile",                        test_patch_profile),
         ("Password reset flow",                  test_password_reset_flow),
         ("Student denied admin access",          test_student_denied_admin),
-        ("Admin can access spam queue",          test_admin_can_access_spam_queue),
+        ("HOD can access spam tab",              test_hod_can_access_spam),
     ]
 
     passed = 0

@@ -22,11 +22,11 @@ urlpatterns = [
     path('grievances/<int:pk>/', views.GrievanceDetailView.as_view(), name='grievance_detail'),
 
     # ------------------------------------------------------------------
-    # Phase 4 — AI Spam Filtering
+    # Phase 4 — AI Spam Filtering (like Gmail's spam tab)
     # ------------------------------------------------------------------
-    path('admin/spam-queue/', views.SpamQueueView.as_view(), name='spam_queue'),
+    path('spam/', views.SpamQueueView.as_view(), name='spam_queue'),
     path(
-        'admin/spam-queue/<int:pk>/reinstate/',
+        'grievances/<int:pk>/reinstate-spam/',
         views.reinstate_spam,
         name='reinstate_spam',
     ),
@@ -34,6 +34,15 @@ urlpatterns = [
         'grievances/<int:pk>/appeal-spam/',
         views.appeal_spam,
         name='appeal_spam',
+    ),
+
+    # ------------------------------------------------------------------
+    # Manual Review — Move SUBMITTED → UNDER_REVIEW
+    # ------------------------------------------------------------------
+    path(
+        'grievances/<int:pk>/review/',
+        views.start_review,
+        name='start_review',
     ),
 
     # ------------------------------------------------------------------
@@ -54,12 +63,6 @@ urlpatterns = [
         views.reopen_grievance,
         name='reopen_grievance',
     ),
-    path(
-        'admin/escalated/<int:pk>/resolve/',
-        views.admin_resolve_escalated,
-        name='admin_resolve_escalated',
-    ),
-
     # ------------------------------------------------------------------
     # Phase 7 — Dashboards, Search & Export
     # ------------------------------------------------------------------
@@ -83,4 +86,7 @@ urlpatterns = [
         views.export_grievances,
         name='export_grievances',
     ),
+
+    # Status History — Audit Trail
+    path('status-history/', views.StatusHistoryListView.as_view(), name='status_history'),
 ]
