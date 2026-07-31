@@ -41,7 +41,7 @@ from .permissions import IsSystemAdmin
 from .services.spam_detector import MLSpamDetector
 from .services.routing import route_grievance
 from .services.audit.audit_logger import audit_log
-from .services.escalation import (
+from .services.email_notifications import (
     send_submission_email,
     send_response_email,
     send_resolution_email,
