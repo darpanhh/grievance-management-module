@@ -62,6 +62,35 @@ class PasswordResetRequestSerializer(serializers.Serializer):
     # regardless so that the endpoint does not leak whether an account exists.
 
 
+class UpdateUserRoleSerializer(serializers.ModelSerializer):
+    """System Admin can assign any role except SYSTEM_ADMIN itself."""
+
+    role = serializers.ChoiceField(
+        choices=[
+            (User.Role.STUDENT, 'Student'),
+            (User.Role.STAFF, 'Staff'),
+            (User.Role.HOD, 'Head of Department'),
+            (User.Role.CAMPUS_ADMIN, 'Campus Admin'),
+        ],
+    )
+    department = serializers.PrimaryKeyRelatedField(
+        queryset=Department.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = User
+        fields = ['role', 'department']
+
+    def validate(self, attrs):
+        if attrs.get('role') == User.Role.HOD and not attrs.get('department'):
+            raise serializers.ValidationError({
+                'department': 'An HOD must be assigned a department.',
+            })
+        return attrs
+
+
 class PasswordResetConfirmSerializer(serializers.Serializer):
     email = serializers.EmailField()
     token = serializers.CharField()

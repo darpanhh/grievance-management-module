@@ -12,6 +12,10 @@ urlpatterns = [
     path('register/', views.RegisterView.as_view(), name='register'),
     path('me/', views.UserProfileView.as_view(), name='user_profile'),
 
+    # System Admin — user management
+    path('users/', views.UserListView.as_view(), name='user_list'),
+    path('users/<int:pk>/role/', views.UpdateUserRoleView.as_view(), name='user_role'),
+
     # Password reset (placeholder — no real email backend yet)
     path('password-reset/', views.password_reset_request, name='password_reset'),
     path('password-reset/confirm/', views.password_reset_confirm, name='password_reset_confirm'),

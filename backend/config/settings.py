@@ -89,10 +89,15 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 if os.getenv('USE_SQLITE', 'False') == 'True':
+    # The SQLite filename is configurable so standalone test scripts can
+    # point at their own isolated database (test_db.sqlite3) instead of the
+    # development database. Their flush()/migrate() calls must never touch
+    # the real data.
+    sqlite_name = os.getenv('SQLITE_NAME', 'db.sqlite3')
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'NAME': BASE_DIR / sqlite_name,
         }
     }
 else:

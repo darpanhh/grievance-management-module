@@ -25,6 +25,12 @@ class IsCampusAdmin(BasePermission):
         return request.user.is_authenticated and request.user.role == 'CAMPUS_ADMIN'
 
 
+class IsSystemAdmin(BasePermission):
+    """Allow only System Admin role."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == 'SYSTEM_ADMIN'
+
+
 class IsHODOrAdmin(BasePermission):
     """Allow HOD or Campus Admin."""
     def has_permission(self, request, view):

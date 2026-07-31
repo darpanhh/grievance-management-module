@@ -9,6 +9,7 @@ backend/.env
 *.pyc
 __pycache__/
 backend/db.sqlite3
+backend/test_db.sqlite3
 backend/logs/
 
 

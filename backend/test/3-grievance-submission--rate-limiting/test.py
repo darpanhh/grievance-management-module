@@ -19,6 +19,8 @@ if str(BACKEND_DIR) not in sys.path:
 import os
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 os.environ.setdefault('USE_SQLITE', 'True')
+# Use an isolated database so tests never touch the development db.sqlite3.
+os.environ.setdefault('SQLITE_NAME', 'test_db.sqlite3')
 
 import django
 django.setup()

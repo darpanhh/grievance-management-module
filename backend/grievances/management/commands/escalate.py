@@ -4,12 +4,17 @@ Management command to manually trigger the escalation cycle.
 Usage:
     python manage.py escalate
     python manage.py escalate --dry-run     # preview only
+    python manage.py escalate --backdate    # force-test: backdate then escalate
 
 For the automatic hourly cycle, APScheduler is started in ``apps.py``.
 """
 
-from django.core.management.base import BaseCommand
+from datetime import timedelta
 
+from django.core.management.base import BaseCommand
+from django.utils import timezone
+
+from grievances.models import Grievance
 from grievances.services.escalation import (
     find_stale_grievances,
     escalate,
@@ -26,9 +31,34 @@ class Command(BaseCommand):
             action='store_true',
             help='List stale grievances without making changes.',
         )
+        parser.add_argument(
+            '--backdate',
+            action='store_true',
+            help=(
+                'Force-test only: backdate eligible grievances past the '
+                'staleness threshold so they escalate immediately.'
+            ),
+        )
 
     def handle(self, *args, **options):
         dry_run = options['dry_run']
+        if options['backdate']:
+            hours = get_escalation_hours()
+            count = Grievance.objects.filter(
+                current_status__in=[
+                    Grievance.Status.SUBMITTED,
+                    Grievance.Status.UNDER_REVIEW,
+                    Grievance.Status.REOPENED,
+                ],
+            ).update(
+                updated_at=timezone.now() - timedelta(hours=hours + 1),
+            )
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Backdated {count} eligible grievance(s) to trigger escalation."
+                )
+            )
+
         stale = find_stale_grievances()
 
         if not stale:

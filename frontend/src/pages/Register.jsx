@@ -33,8 +33,12 @@ const Register = () => {
         navigate('/dashboard/student', { replace: true });
       } else if (userRole === 'HOD' || userRole === 'DEPARTMENT_ADMIN') {
         navigate('/dashboard/department', { replace: true });
-      } else if (userRole === 'CAMPUS_ADMIN' || userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
+      } else if (userRole === 'SYSTEM_ADMIN') {
         navigate('/dashboard/admin', { replace: true });
+      } else if (userRole === 'CAMPUS_ADMIN') {
+        navigate('/dashboard/campus', { replace: true });
+      } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
+        navigate('/', { replace: true });
       } else {
         navigate('/dashboard', { replace: true });
       }

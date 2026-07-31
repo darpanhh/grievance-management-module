@@ -19,13 +19,14 @@ const Navbar = () => {
   const isActive = (path) => location.pathname === path;
 
   const userRole = (user?.role || '').toUpperCase();
-  const isAdminOrHOD = ['HOD', 'DEPARTMENT_ADMIN', 'CAMPUS_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(userRole);
+  const isAdminOrHOD = ['HOD', 'DEPARTMENT_ADMIN', 'CAMPUS_ADMIN', 'SYSTEM_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(userRole);
 
   const getDashboardUrl = () => {
     if (!user) return '/dashboard';
     if (userRole === 'STUDENT' || userRole === 'STAFF') return '/dashboard/student';
     if (userRole === 'HOD' || userRole === 'DEPARTMENT_ADMIN') return '/dashboard/department';
-    if (userRole === 'CAMPUS_ADMIN') return '/dashboard/admin';
+    if (userRole === 'SYSTEM_ADMIN') return '/dashboard/admin';
+    if (userRole === 'CAMPUS_ADMIN') return '/dashboard/campus';
     return '/dashboard/student';
   };
 

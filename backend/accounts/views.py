@@ -4,9 +4,12 @@ from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from grievances.permissions import IsSystemAdmin
+
 from .serializers import (
     RegisterSerializer,
     UserSerializer,
+    UpdateUserRoleSerializer,
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer,
 )
@@ -44,6 +47,39 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class UserListView(generics.ListAPIView):
+    """
+    GET /api/auth/users/
+
+    System Admin only. Lists all users so the admin can assign roles.
+    """
+    queryset = User.objects.select_related('department').order_by('username')
+    serializer_class = UserSerializer
+    permission_classes = (permissions.IsAuthenticated, IsSystemAdmin)
+
+
+class UpdateUserRoleView(generics.UpdateAPIView):
+    """
+    PATCH /api/auth/users/{pk}/role/
+
+    System Admin only. Assigns a role (and optionally a department) to a
+    user. Cannot assign the SYSTEM_ADMIN role — only a superuser can create
+    another SYSTEM_ADMIN. A System Admin cannot change their own role.
+    """
+    queryset = User.objects.all()
+    serializer_class = UpdateUserRoleSerializer
+    permission_classes = (permissions.IsAuthenticated, IsSystemAdmin)
+
+    def update(self, request, *args, **kwargs):
+        target = self.get_object()
+        if target == request.user:
+            return Response(
+                {'error': 'You cannot change your own role.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().update(request, *args, **kwargs)
 
 
 @api_view(['POST'])

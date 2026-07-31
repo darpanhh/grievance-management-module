@@ -12,6 +12,7 @@ import Faq from './pages/Faq';
 import StudentDashboard from './pages/StudentDashboard';
 import GrievanceDetail from './pages/GrievanceDetail';
 import DepartmentDashboard from './pages/DepartmentDashboard';
+import CampusAdminDashboard from './pages/CampusAdminDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import './App.css';
 
@@ -24,8 +25,10 @@ const DashboardRedirect = () => {
     return <Navigate to="/dashboard/student" replace />;
   } else if (role === 'HOD' || role === 'DEPARTMENT_ADMIN') {
     return <Navigate to="/dashboard/department" replace />;
-  } else if (role === 'CAMPUS_ADMIN' || role === 'ADMIN' || role === 'SUPER_ADMIN') {
+  } else if (role === 'SYSTEM_ADMIN') {
     return <Navigate to="/dashboard/admin" replace />;
+  } else if (role === 'CAMPUS_ADMIN') {
+    return <Navigate to="/dashboard/campus" replace />;
   }
 
   return <Navigate to="/dashboard/student" replace />;
@@ -95,9 +98,17 @@ function App() {
                 }
               />
               <Route
-                path="/dashboard/admin"
+                path="/dashboard/campus"
                 element={
                   <ProtectedRoute allowedRoles={['CAMPUS_ADMIN']}>
+                    <CampusAdminDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/admin"
+                element={
+                  <ProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
                     <AdminDashboard />
                   </ProtectedRoute>
                 }

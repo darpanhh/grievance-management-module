@@ -23,6 +23,8 @@ if str(BACKEND_DIR) not in sys.path:
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 os.environ.setdefault('USE_SQLITE', 'True')
+# Use an isolated database so tests never touch the development db.sqlite3.
+os.environ.setdefault('SQLITE_NAME', 'test_db.sqlite3')
 
 import django
 django.setup()
@@ -69,9 +71,13 @@ def _create_user(username, role='STUDENT', department=None, password='testpass12
         role=role, department=department,
     )
     if is_superuser:
+        # A Django superuser is a SYSTEM_ADMIN in the app (mirrors the
+        # custom UserManager.create_superuser, which the dashboards/export
+        # endpoints now gate on).
         user.is_superuser = True
         user.is_staff = True
-        user.save(update_fields=['is_superuser', 'is_staff'])
+        user.role = 'SYSTEM_ADMIN'
+        user.save(update_fields=['is_superuser', 'is_staff', 'role'])
     return user
 
 

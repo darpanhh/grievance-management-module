@@ -14,6 +14,7 @@ Phase 5: Grievance Routing
 import csv
 
 from django.contrib.auth.hashers import check_password
+from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -36,6 +37,7 @@ from .serializers import (
     GrievanceTrackSerializer,
     StatusHistorySerializer,
 )
+from .permissions import IsSystemAdmin
 from .services.spam_detector import MLSpamDetector
 from .services.routing import route_grievance
 from .services.audit.audit_logger import audit_log
@@ -121,14 +123,26 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
             'category', 'department', 'user'
         )
 
-        if user.role == 'STUDENT' or user.role == 'STAFF':
+        if user.role in ('STUDENT', 'STAFF'):
+            # Submitters see their own grievances — including any flagged as
+            # SPAM — so they can appeal the classification or see the outcome.
             qs = qs.filter(user=user)
         elif user.role == 'HOD':
-            qs = qs.filter(department=user.department)
+            # Department inbox — SPAM lives in its own tab (like Gmail).
+            qs = qs.filter(department=user.department).exclude(
+                current_status=Grievance.Status.SPAM,
+            )
         elif user.role == 'CAMPUS_ADMIN':
-            qs = qs.filter(current_status=Grievance.Status.ESCALATED)
-        # Exclude SPAM from the main inbox (spam has its own tab, like Gmail)
-        qs = qs.exclude(current_status=Grievance.Status.SPAM)
+            # Escalations currently open OR assigned to this admin (an admin
+            # keeps access after picking a grievance up via review). SPAM is
+            # never part of the escalation queue.
+            qs = qs.filter(
+                Q(current_status=Grievance.Status.ESCALATED)
+                | Q(escalated_to=user),
+            ).exclude(current_status=Grievance.Status.SPAM)
+        elif user.role == 'SYSTEM_ADMIN':
+            # System Admin monitors everything, including spam.
+            pass
 
         return qs.order_by('-created_at')
 
@@ -297,12 +311,22 @@ class GrievanceDetailView(generics.RetrieveAPIView):
             'attachments',
         )
 
-        if user.role == 'STUDENT':
+        if user.role in ('STUDENT', 'STAFF'):
+            # STAFF is a submitter (same flow as students), not a department
+            # handler — they can only open their own grievances.
             qs = qs.filter(user=user)
-        elif user.role in ('STAFF', 'HOD'):
+        elif user.role == 'HOD':
             qs = qs.filter(department=user.department)
         elif user.role == 'CAMPUS_ADMIN':
-            qs = qs.filter(current_status=Grievance.Status.ESCALATED)
+            # Escalations currently open OR assigned to this admin — the same
+            # scoping as the list so the escalation workflow stays open.
+            qs = qs.filter(
+                Q(current_status=Grievance.Status.ESCALATED)
+                | Q(escalated_to=user),
+            )
+        elif user.role == 'SYSTEM_ADMIN':
+            # System Admin can open any grievance (read-only).
+            pass
 
         return qs
 
@@ -786,9 +810,15 @@ def reopen_grievance(request, pk):
 
     previous_status = grievance.current_status
 
+    # Optional comment from the submitter — stored in the StatusHistory
+    # remark so it shows up in the audit trail (mirrors the respond flow).
+    comment = request.data.get('comment', '').strip()
+
     # Transition status (signal auto-logs StatusHistory)
     grievance._action_by = request.user
     grievance._action_remarks = 'Reopened by the submitter for further review.'
+    if comment:
+        grievance._action_remarks += f' Reason: {comment}'
     grievance.is_reopened = True
     grievance.current_status = Grievance.Status.REOPENED
     grievance.save(update_fields=['is_reopened', 'current_status'])
@@ -993,13 +1023,14 @@ class AdminDashboardView(generics.GenericAPIView):
     """
     GET /api/dashboard/admin/
 
-    Returns system-wide statistics for Campus Admin:
+    System-wide health report for System Admin (read-only):
       - Aggregate counts by status
       - Escalated and spam counts
+      - Per-department breakdown (the "is the system working" view)
       - The 10 most recently updated grievances
     """
 
-    permission_classes = (permissions.IsAuthenticated, permissions.IsAdminUser)
+    permission_classes = (permissions.IsAuthenticated, IsSystemAdmin)
 
     def get(self, request, *args, **kwargs):
         qs = Grievance.objects.all()
@@ -1020,6 +1051,36 @@ class AdminDashboardView(generics.GenericAPIView):
         ).count()
         total = qs.count()
 
+        # Per-department breakdown
+        departments = []
+        for dept in Department.objects.order_by('name'):
+            dept_qs = Grievance.objects.filter(department=dept)
+            dept_status = {}
+            for status_choice in Grievance.Status.values:
+                dept_status[status_choice] = dept_qs.filter(
+                    current_status=status_choice,
+                ).count()
+            oldest_open = dept_qs.exclude(
+                current_status__in=[
+                    Grievance.Status.RESOLVED,
+                    Grievance.Status.CLOSED,
+                    Grievance.Status.SPAM,
+                ],
+            ).order_by('created_at').values_list('created_at', flat=True).first()
+            departments.append({
+                'id': dept.id,
+                'name': dept.name,
+                'total': dept_qs.count(),
+                'status_breakdown': dept_status,
+                'escalated': dept_qs.filter(
+                    current_status=Grievance.Status.ESCALATED,
+                ).count(),
+                'spam': dept_qs.filter(
+                    current_status=Grievance.Status.SPAM,
+                ).count(),
+                'oldest_open': oldest_open,
+            })
+
         # 10 most recently updated grievances
         recent = qs.select_related(
             'category', 'department', 'user',
@@ -1036,17 +1097,20 @@ class AdminDashboardView(generics.GenericAPIView):
                 'escalated': escalated_count,
                 'spam': spam_count,
             },
+            'departments': departments,
             'recent': recent_data,
         })
 
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated, permissions.IsAdminUser])
+@permission_classes([permissions.IsAuthenticated, IsSystemAdmin])
 def export_grievances(request):
     """
-    GET /api/reports/export/?format=csv
+    GET /api/reports/export/
 
     Exports grievances as a CSV file.  Django system admin only.
+    Always returns CSV — do NOT pass ?format=csv (DRF has no CSV renderer,
+    so that query param causes a 404 before this view runs).
 
     Supports optional query-parameter filters:
       - department (int)  — filter by department ID

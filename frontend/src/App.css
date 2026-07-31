@@ -770,6 +770,7 @@
 .form-group small { color: var(--text-muted); font-size: .78rem; }
 .form-alert { padding: .8rem 1rem; border-radius: var(--radius-sm); font-size: .9rem; font-weight: 500; }
 .form-alert.danger { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; }
+.form-alert.success { color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; }
 .anonymous-toggle { display: flex; gap: .75rem; align-items: flex-start; padding: 1rem; border-radius: var(--radius-sm); background: #f8fafc; border: 1px solid var(--border-color); cursor: pointer; }
 .anonymous-toggle input { width: 18px; height: 18px; margin-top: .15rem; accent-color: var(--primary); }
 .anonymous-toggle span { display: grid; gap: .2rem; }
@@ -906,6 +907,11 @@
   .grievance-page { padding: 2rem 1rem; }.grievance-form, .tracking-form, .grievance-detail { padding: 1.25rem; }.page-heading h1 { font-size: 1.8rem; }.submit-grievance-btn { width: 100%; }.detail-header { flex-direction: column; }.detail-meta { grid-template-columns: 1fr; }.modal-actions { flex-direction: column; }.modal-actions .btn { width: 100%; }
 .my-grievance-list li, .my-grievance-actions { align-items: flex-start; flex-direction: column; }.my-grievance-actions { width: 100%; }.my-grievance-actions .btn { width: 100%; }
 }
+.card-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .6rem; }
+.card-actions .btn { padding: .4rem .8rem; font-size: .8rem; }
+.card-actions .form-alert { width: 100%; }
+.spam-tab-count { margin-left: .35rem; color: #b91c1c; font-weight: 800; }
+.export-bar { display: flex; justify-content: flex-end; margin-bottom: 1.25rem; }
 
 /* Student grievance tracking workspace */
 .track-page-redesign { min-height: calc(100vh - 140px); padding: 2rem max(1.5rem, calc((100% - 1320px) / 2)); background: radial-gradient(circle at 50% 2%, rgba(99,102,241,.1), transparent 35%), #fafbff; }

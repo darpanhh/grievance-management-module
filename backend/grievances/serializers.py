@@ -261,7 +261,7 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'current_status',
             'category', 'category_name', 'department', 'department_name',
             'is_anonymous', 'is_reopened', 'escalation_level',
-            'escalated_to_name', 'submitter_name',
+            'escalated_to_name', 'submitter_name', 'user',
             'responses', 'status_history', 'ai_analysis', 'attachments',
             'created_at', 'updated_at',
         ]
