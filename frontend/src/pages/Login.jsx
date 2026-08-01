@@ -88,7 +88,7 @@ const Login = () => {
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
-            <label htmlFor="username">Username or Roll No / Email</label>
+            <label htmlFor="username">Username or Roll No -</label>
             <input
               type="text"
               id="username"

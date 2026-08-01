@@ -258,7 +258,7 @@ const Register = () => {
               type="tel"
               id="contact_number"
               name="contact_number"
-              placeholder="+977-98XXXXXXXX"
+              placeholder="98XXXXXXXX"
               value={formData.contact_number}
               onChange={handleChange}
               required
