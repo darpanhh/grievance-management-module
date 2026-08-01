@@ -7,6 +7,7 @@ from .models import (
     Category,
     Department,
     Grievance,
+    Request,
     Response,
     StatusHistory,
 )
@@ -42,9 +43,17 @@ class AttachmentSerializer(serializers.ModelSerializer):
 class StatusHistorySerializer(serializers.ModelSerializer):
     """Read-only serializer for StatusHistory entries."""
 
-    action_by_name = serializers.CharField(
-        source='action_by.get_full_name', read_only=True, allow_null=True
-    )
+    action_by_name = serializers.SerializerMethodField()
+
+    def get_action_by_name(self, obj):
+        if obj.action_by is None:
+            return None
+        full_name = obj.action_by.get_full_name()
+        if full_name:
+            return full_name
+        if obj.action_by.role == 'CAMPUS_ADMIN':
+            return 'Campus Administrator'
+        return obj.action_by.username
 
     class Meta:
         model = StatusHistory
@@ -154,8 +163,8 @@ class GrievanceCreateSerializer(serializers.ModelSerializer):
     def validate_description(self, value):
         """Description must be between 10 and 5000 characters."""
         value = value.strip()
-        if len(value) < 5:
-            raise serializers.ValidationError('Description must be at least 5 characters.')
+        if len(value) < 10:
+            raise serializers.ValidationError('Description must be at least 10 characters.')
         if len(value) > 5000:
             raise serializers.ValidationError('Description must not exceed 5000 characters.')
         return value
@@ -235,15 +244,55 @@ class GrievanceCreateSerializer(serializers.ModelSerializer):
         return grievance
 
 
+class RequestSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the unified Request model (appeals, reopens, escalations).
+    """
+    grievance_title = serializers.CharField(source='grievance.title', read_only=True)
+    grievance_created_at = serializers.DateTimeField(source='grievance.created_at', read_only=True, allow_null=True)
+    student_name = serializers.SerializerMethodField()
+    reviewed_by_admin_name = serializers.CharField(source='reviewed_by_admin.get_full_name', read_only=True, allow_null=True)
+    forwarded_department_name = serializers.CharField(source='forwarded_department.name', read_only=True, allow_null=True)
+    request_type_display = serializers.CharField(source='get_request_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    original_status_display = serializers.CharField(source='get_original_status_display', read_only=True, allow_null=True)
+
+    class Meta:
+        model = Request
+        fields = [
+            'id', 'grievance', 'grievance_title', 'grievance_created_at',
+            'student', 'student_name',
+            'request_type', 'request_type_display', 'reason', 'attachment',
+            'status', 'status_display', 'original_status', 'original_status_display',
+            'created_at', 'reviewed_by_admin',
+            'reviewed_by_admin_name', 'forwarded_department',
+            'forwarded_department_name', 'admin_remark', 'resolved_at',
+        ]
+        read_only_fields = [
+            'id', 'student', 'status', 'original_status', 'created_at', 'reviewed_by_admin',
+            'forwarded_department', 'admin_remark', 'resolved_at'
+        ]
+
+    def get_student_name(self, obj):
+        if obj.student:
+            return obj.student.get_full_name() or obj.student.username
+        if obj.grievance and obj.grievance.user:
+            if obj.grievance.is_anonymous:
+                return "Anonymous"
+            return obj.grievance.user.get_full_name() or obj.grievance.user.username
+        return "System Auto-Escalation"
+
+
 class GrievanceDetailSerializer(serializers.ModelSerializer):
     """
     Full-detail serializer for a single grievance.
 
-    Includes nested responses, status history, AI analysis, and attachments.
+    Includes nested responses, status history, AI analysis, attachments, and requests.
     """
 
     category_name = serializers.CharField(source='category.name', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
+    submitter = serializers.IntegerField(source='user_id', read_only=True)
     submitter_name = serializers.SerializerMethodField()
     escalated_to_name = serializers.CharField(
         source='escalated_to.get_full_name', read_only=True, allow_null=True
@@ -252,6 +301,7 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
     status_history = StatusHistorySerializer(many=True, read_only=True)
     ai_analysis = AIAnalysisSerializer(read_only=True, allow_null=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
+    requests = RequestSerializer(many=True, read_only=True)
 
     class Meta:
         model = Grievance
@@ -259,9 +309,9 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'current_status',
             'category', 'category_name', 'department', 'department_name',
             'is_anonymous', 'is_reopened', 'escalation_level',
-            'escalated_to_name', 'submitter_name',
+            'escalated_to_name', 'submitter', 'submitter_name',
             'responses', 'status_history', 'ai_analysis', 'attachments',
-            'created_at', 'updated_at',
+            'requests', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
 

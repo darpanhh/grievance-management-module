@@ -55,13 +55,18 @@ urlpatterns = [
         name='reopen_grievance',
     ),
     path(
+        'grievances/<int:pk>/close/',
+        views.close_grievance,
+        name='close_grievance',
+    ),
+    path(
         'admin/escalated/<int:pk>/resolve/',
         views.admin_resolve_escalated,
         name='admin_resolve_escalated',
     ),
 
     # ------------------------------------------------------------------
-    # Phase 7 — Dashboards, Search & Export
+    # Phase 7 — Dashboards & Search
     # ------------------------------------------------------------------
     path(
         'dashboard/student/',
@@ -78,9 +83,43 @@ urlpatterns = [
         views.AdminDashboardView.as_view(),
         name='dashboard_admin',
     ),
+
+    # ------------------------------------------------------------------
+    # Phase 8 — Unified Request & Admin Review Workflow
+    # ------------------------------------------------------------------
     path(
-        'reports/export/',
-        views.export_grievances,
-        name='export_grievances',
+        'grievances/<int:pk>/request/',
+        views.create_grievance_request,
+        name='create_grievance_request',
+    ),
+    path(
+        'admin/requests/',
+        views.AdminRequestListView.as_view(),
+        name='admin_request_list',
+    ),
+    path(
+        'admin/requests/<int:pk>/',
+        views.AdminRequestDetailView.as_view(),
+        name='admin_request_detail',
+    ),
+    path(
+        'admin/requests/<int:pk>/forward/',
+        views.admin_forward_request,
+        name='admin_forward_request',
+    ),
+    path(
+        'admin/requests/<int:pk>/reject/',
+        views.admin_reject_request,
+        name='admin_reject_request',
+    ),
+    path(
+        'admin/requests/<int:pk>/resolve/',
+        views.admin_resolve_request,
+        name='admin_resolve_request',
+    ),
+    path(
+        'admin/requests/<int:pk>/close/',
+        views.admin_close_request,
+        name='admin_close_request',
     ),
 ]

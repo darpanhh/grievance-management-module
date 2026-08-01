@@ -30,6 +30,8 @@ class Grievance(models.Model):
         REOPENED = 'REOPENED', 'Reopened'
         ESCALATED = 'ESCALATED', 'Escalated'
         RESOLVED = 'RESOLVED', 'Resolved'
+        REJECTED = 'REJECTED', 'Rejected'
+        APPEAL_PENDING = 'APPEAL_PENDING', 'Appeal Pending'
         CLOSED = 'CLOSED', 'Closed'
 
     user = models.ForeignKey(
@@ -192,3 +194,97 @@ class Attachment(models.Model):
 
     def __str__(self):
         return f"Attachment '{self.file_name}' for GMS-{self.grievance.id:04d}"
+
+class Request(models.Model):
+    """
+    Unified Request model handling student appeals (rejection, spam),
+    reopening requests, and system escalations for Campus Admin review.
+    """
+    class RequestType(models.TextChoices):
+        REOPEN = 'REOPEN', 'Reopen Request'
+        REJECTION_APPEAL = 'REJECTION_APPEAL', 'Rejection Appeal'
+        SPAM_APPEAL = 'SPAM_APPEAL', 'Spam Appeal'
+        ESCALATION = 'ESCALATION', 'Escalation'
+
+    class RequestStatus(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        FORWARDED = 'FORWARDED', 'Forwarded'
+        REJECTED = 'REJECTED', 'Rejected'
+        RESOLVED = 'RESOLVED', 'Resolved'
+        CLOSED = 'CLOSED', 'Closed'
+
+    grievance = models.ForeignKey(
+        Grievance,
+        on_delete=models.CASCADE,
+        related_name='requests',
+        help_text="The grievance associated with this request."
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='submitted_requests',
+        help_text="The student/user submitting the request (null for automated escalations)."
+    )
+    request_type = models.CharField(
+        max_length=30,
+        choices=RequestType.choices,
+        help_text="Type of request (REOPEN, REJECTION_APPEAL, SPAM_APPEAL, ESCALATION)."
+    )
+    reason = models.TextField(
+        help_text="Mandatory justification provided by student or system."
+    )
+    attachment = models.FileField(
+        upload_to='request_attachments/',
+        null=True,
+        blank=True,
+        help_text="Optional supporting document attached to request."
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=RequestStatus.choices,
+        default=RequestStatus.PENDING,
+        help_text="Current review status of the request."
+    )
+    original_status = models.CharField(
+        max_length=20,
+        choices=Grievance.Status.choices,
+        null=True,
+        blank=True,
+        help_text="Grievance status before the request was submitted — restored if the request is rejected."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_by_admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_requests',
+        help_text="Campus Admin who reviewed this request."
+    )
+    forwarded_department = models.ForeignKey(
+        Department,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='forwarded_requests',
+        help_text="Department this request was forwarded to by the admin."
+    )
+    admin_remark = models.TextField(
+        blank=True,
+        default='',
+        help_text="Remarks/notes added by Campus Admin during review."
+    )
+    resolved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when admin resolved (forwarded or rejected) the request."
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.get_request_type_display()} for GMS-{self.grievance.id:04d} [{self.get_status_display()}]"
+

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Grievance, AIAnalysis, Response, StatusHistory, Attachment
+from .models import Category, Grievance, AIAnalysis, Response, StatusHistory, Attachment, Request
 
 class AIAnalysisInline(admin.StackedInline):
     model = AIAnalysis
@@ -22,6 +22,11 @@ class AttachmentInline(admin.TabularInline):
     extra = 0
     readonly_fields = ('uploaded_at',)
 
+class RequestInline(admin.TabularInline):
+    model = Request
+    extra = 0
+    readonly_fields = ('created_at', 'resolved_at')
+
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ('name', 'description')
@@ -33,11 +38,18 @@ class GrievanceAdmin(admin.ModelAdmin):
     list_filter = ('current_status', 'is_anonymous', 'category', 'department', 'created_at')
     search_fields = ('id', 'title', 'description', 'secret_code', 'user__username', 'user__email')
     readonly_fields = ('created_at', 'updated_at')
-    inlines = [AIAnalysisInline, AttachmentInline, ResponseInline, StatusHistoryInline]
+    inlines = [AIAnalysisInline, AttachmentInline, RequestInline, ResponseInline, StatusHistoryInline]
 
     def id_formatted(self, obj):
         return f"GMS-{obj.id:04d}"
     id_formatted.short_description = "Grievance ID"
+
+@admin.register(Request)
+class RequestAdmin(admin.ModelAdmin):
+    list_display = ('id', 'grievance', 'student', 'request_type', 'status', 'created_at')
+    list_filter = ('request_type', 'status', 'created_at')
+    search_fields = ('grievance__title', 'student__username', 'reason', 'admin_remark')
+    readonly_fields = ('created_at', 'resolved_at')
 
 @admin.register(AIAnalysis)
 class AIAnalysisAdmin(admin.ModelAdmin):

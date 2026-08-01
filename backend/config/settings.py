@@ -131,7 +131,10 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# The portal displays and filters grievance dates in the campus's local time.
+# Keeping this aligned with the frontend avoids splitting a single Nepal
+# calendar day across two UTC dates.
+TIME_ZONE = 'Asia/Kathmandu'
 
 USE_I18N = True
 
@@ -189,12 +192,16 @@ SIMPLE_JWT = {
 # ---------------------------------------------------------------------------
 # Email Configuration (Django SMTP)
 # ---------------------------------------------------------------------------
-# These defaults work for dev (console backend prints to stdout).
+# These defaults work for dev (file-based backend writes emails to a folder).
 # Override via .env for production SMTP.
 
 EMAIL_BACKEND = os.getenv(
     'EMAIL_BACKEND',
-    'django.core.mail.backends.console.EmailBackend',
+    'django.core.mail.backends.filebased.EmailBackend',
+)
+EMAIL_FILE_PATH = os.getenv(
+    'EMAIL_FILE_PATH',
+    os.path.join(BASE_DIR, 'sent_emails'),
 )
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
@@ -211,10 +218,14 @@ BASE_URL = os.getenv('BASE_URL', 'http://localhost:8000')
 # ---------------------------------------------------------------------------
 # Escalation Configuration
 # ---------------------------------------------------------------------------
-# Number of hours of inactivity before a grievance is auto-escalated.
-# Grievances in UNDER_REVIEW / RESPONDED / REOPENED that have not been
-# updated for this many hours are escalated to a Campus Admin.
+# ESCALATION_HOURS: hours of inactivity before a grievance is auto-escalated.
+#   Eligible statuses: SUBMITTED, UNDER_REVIEW, REOPENED.
+#   Both settings accept fractional values for testing (e.g. 0.0833 ≈ 5 min).
+#   Override via .env — no code changes required.
+#
+# Production defaults:  ESCALATION_HOURS=72  ESCALATION_INTERVAL_MINUTES=60
+# Testing overrides:    ESCALATION_HOURS=0.0833  ESCALATION_INTERVAL_MINUTES=1
 
-ESCALATION_HOURS = int(os.getenv('ESCALATION_HOURS', '72'))  # default 3 days
-ESCALATION_INTERVAL_MINUTES = int(os.getenv('ESCALATION_INTERVAL_MINUTES', '60'))
+ESCALATION_HOURS = float(os.getenv('ESCALATION_HOURS', '72'))            # default: 3 days
+ESCALATION_INTERVAL_MINUTES = float(os.getenv('ESCALATION_INTERVAL_MINUTES', '60'))  # default: 1 hour
 

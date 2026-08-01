@@ -18,7 +18,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f4f7fc;margin:0;padding:0}
 </head>
 <body>
 <div class="container">
-<div class="header"><h1>✅ Response Received</h1></div>
+<div class="header"><h1>Response Received</h1></div>
 <div class="body">
 <p class="greeting">Dear <strong>{{ user.get_full_name|default:user.username }}</strong>,</p>
 <p style="color:#475569;font-size:14px">Your grievance has received a response from <strong>{{ hod_name }}</strong>.</p>
@@ -32,8 +32,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f4f7fc;margin:0;padding:0}
 </table>
 <div class="actions">
 <p>What would you like to do?</p>
-<a href="#">✓ Resolve (if satisfied)</a>
-<a class="review" href="#">↻ Request Further Review (if unsatisfied)</a>
+<a href="#">Resolve (if satisfied)</a>
+<a class="review" href="#">Request Further Review (if unsatisfied)</a>
 </div>
 </div>
 <div class="footer"><p><strong>{{ site_name }}</strong></p><p>This is an automated notification.</p></div>
