@@ -1,11 +1,14 @@
 # Workspace
 .agents
-.claude
-.claude/skills
-.claude/skills/gms-workflow
+.claude/
 graphify-out
 docs
 docs/GMS_SRS_v2.0.docx
+
+# Implementation plan / progress tracker
+implementation-plan.md
+Progress Tracker.md
+progress_tracker.md
 
 backend/test.md
 
@@ -15,10 +18,32 @@ backend/.venv/
 backend/.env
 *.pyc
 __pycache__/
+*.egg-info/
+.pytest_cache/
+.coverage
 backend/db.sqlite3
+backend/sent_emails/
+backend/media/
+.ipynb_checkpoints/
+backend/grievances/notebooks/*.ipynb_checkpoints/
 
+
+# Environment files (keep example files)
+.env
+.env.local
+.env.development
+.env.production
+
+# Logs
+*.log
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
 
 # Node / React / Frontend
 frontend/node_modules/
 frontend/dist/
-frontend/src/assets/hero.png
+
