@@ -23,19 +23,20 @@ const Navbar = () => {
 
   const getDashboardUrl = () => {
     if (!user) return '/dashboard';
-    if (userRole === 'STUDENT' || userRole === 'STAFF') return '/dashboard/student';
-    if (userRole === 'HOD' || userRole === 'DEPARTMENT_ADMIN') return '/dashboard/department';
-    if (userRole === 'CAMPUS_ADMIN') return '/dashboard/admin';
-    return '/dashboard/student';
+    if (userRole === 'STUDENT' || userRole === 'STAFF') return '/dashboard';
+    if (userRole === 'HOD' || userRole === 'DEPARTMENT_ADMIN') return '/department/grievances';
+    if (userRole === 'CAMPUS_ADMIN') return '/admin/grievances';
+    return '/dashboard';
   };
 
   const dashboardUrl = getDashboardUrl();
+  const dashboardOnlyRole = userRole === 'HOD' || userRole === 'CAMPUS_ADMIN';
 
   return (
     <nav className="navbar">
       <div className="navbar-container">
         {/* Brand / Logo */}
-        <Link to="/" className="navbar-brand">
+        <Link to={dashboardOnlyRole ? dashboardUrl : '/'} className="navbar-brand">
           <img src={logo} alt="IOE Pulchowk Campus Logo" className="navbar-logo" />
           <div className="brand-text-container">
             <span className="navbar-subtitle">Grievance Portal</span>
@@ -43,8 +44,8 @@ const Navbar = () => {
         </Link>
 
         {/* Mobile menu toggle button */}
-        <button 
-          className="mobile-menu-btn" 
+        <button
+          className="mobile-menu-btn"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           aria-label="Toggle navigation menu"
         >
@@ -56,19 +57,21 @@ const Navbar = () => {
         {/* Navigation Links */}
         <div className={`navbar-menu ${mobileMenuOpen ? 'active' : ''}`}>
           <div className="navbar-links">
-            <Link 
-              to="/" 
-              className={`nav-link ${isActive('/') ? 'active' : ''}`}
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              Home
-            </Link>
-            
-            {/* Show public tracking for Guests, Students, and Staff (Hide for Admin & HOD) */}
-            {!isAdminOrHOD && (
+            {!dashboardOnlyRole && (
+              <Link
+                to="/"
+                className={`nav-link ${isActive('/') ? 'active' : ''}`}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Home
+              </Link>
+            )}
+
+            {/* Show public tracking only for guests (hide for all logged-in users) */}
+            {!user && (
               <>
-                <Link 
-                  to="/grievances/track" 
+                <Link
+                  to="/grievances/track"
                   className={`nav-link ${isActive('/grievances/track') ? 'active' : ''}`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
@@ -78,8 +81,8 @@ const Navbar = () => {
             )}
 
             {user && (
-              <Link 
-                to={dashboardUrl} 
+              <Link
+                to={dashboardUrl}
                 className={`nav-link ${isActive(dashboardUrl) || isActive('/dashboard') ? 'active' : ''}`}
                 onClick={() => setMobileMenuOpen(false)}
               >
@@ -92,8 +95,8 @@ const Navbar = () => {
           <div className="navbar-auth">
             {user ? (
               <div className="user-dropdown-container">
-                <button 
-                  className="user-profile-btn" 
+                <button
+                  className="user-profile-btn"
                   onClick={() => setDropdownOpen(!dropdownOpen)}
                 >
                   <div className="avatar-circle">
@@ -110,9 +113,9 @@ const Navbar = () => {
                       <span className="role-badge">{user.role || 'User'}</span>
                     </div>
                     <div className="dropdown-divider"></div>
-                    <Link 
-                      to={dashboardUrl} 
-                      className="dropdown-item" 
+                    <Link
+                      to={dashboardUrl}
+                      className="dropdown-item"
                       onClick={() => setDropdownOpen(false)}
                     >
                       📊 Dashboard

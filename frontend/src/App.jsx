@@ -20,14 +20,14 @@ const DashboardRedirect = () => {
   const role = (user?.role || '').toUpperCase();
 
   if (role === 'STUDENT' || role === 'STAFF') {
-    return <Navigate to="/dashboard/student" replace />;
+    return <StudentDashboard />;
   } else if (role === 'HOD' || role === 'DEPARTMENT_ADMIN') {
-    return <Navigate to="/dashboard/department" replace />;
+    return <Navigate to="/department/grievances" replace />;
   } else if (role === 'CAMPUS_ADMIN' || role === 'ADMIN' || role === 'SUPER_ADMIN') {
-    return <Navigate to="/dashboard/admin" replace />;
+    return <Navigate to="/admin/grievances" replace />;
   }
 
-  return <Navigate to="/dashboard/student" replace />;
+  return <Navigate to="/dashboard" replace />;
 };
 
 const NotFoundPlaceholder = () => (
@@ -77,7 +77,7 @@ function App() {
                 }
               />
               <Route
-                path="/dashboard/student"
+                path="/dashboard"
                 element={
                   <ProtectedRoute allowedRoles={['STUDENT', 'STAFF']}>
                     <StudentDashboard />
@@ -85,7 +85,7 @@ function App() {
                 }
               />
               <Route
-                path="/dashboard/department"
+                path="/department/grievances"
                 element={
                   <ProtectedRoute allowedRoles={['HOD']}>
                     <DepartmentDashboard />
@@ -93,13 +93,16 @@ function App() {
                 }
               />
               <Route
-                path="/dashboard/admin"
+                path="/admin/grievances"
                 element={
                   <ProtectedRoute allowedRoles={['CAMPUS_ADMIN']}>
                     <AdminDashboard />
                   </ProtectedRoute>
                 }
               />
+              <Route path="/dashboard/student" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard/department" element={<Navigate to="/department/grievances" replace />} />
+              <Route path="/dashboard/admin" element={<Navigate to="/admin/grievances" replace />} />
 
               {/* 404 Catch-All */}
               <Route path="*" element={<NotFoundPlaceholder />} />

@@ -1,6 +1,7 @@
 const STATUS_LABELS = {
-  SUBMITTED: 'Submitted', SPAM: 'Spam', UNDER_REVIEW: 'Under review', RESPONDED: 'Responded',
-  REOPENED: 'Reopened', ESCALATED: 'Escalated', RESOLVED: 'Resolved', CLOSED: 'Closed',
+  SUBMITTED: 'Submitted', SPAM: 'Spam', UNDER_REVIEW: 'In Progress', RESPONDED: 'Responded',
+  REOPENED: 'Reopened', ESCALATED: 'Escalated', RESOLVED: 'Resolved', REJECTED: 'Rejected',
+  APPEAL_PENDING: 'Appeal Pending', CLOSED: 'Closed',
 };
 
 const StatusBadge = ({ status }) => {

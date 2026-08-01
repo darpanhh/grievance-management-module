@@ -3,6 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import logo from '../assets/logo.png';
 
+const postLoginRoute = (role) => {
+  const userRole = (role || '').toUpperCase();
+  if (userRole === 'HOD') return '/department/grievances';
+  if (userRole === 'CAMPUS_ADMIN') return '/admin/grievances';
+  return '/';
+};
+
 const Login = () => {
   const [formData, setFormData] = useState({
     username: '',
@@ -14,10 +21,9 @@ const Login = () => {
   const { user, loading, login } = useAuth();
   const navigate = useNavigate();
 
-  // The landing page is role-aware, so every authenticated user starts there.
   useEffect(() => {
     if (user && !loading) {
-      navigate('/', { replace: true });
+      navigate(postLoginRoute(user.role), { replace: true });
     }
   }, [user, loading, navigate]);
 
@@ -45,8 +51,7 @@ const Login = () => {
         password: formData.password,
       });
 
-      // Always begin at the role-aware home page after authentication.
-      navigate('/', { replace: true });
+      navigate(postLoginRoute(res.user?.role), { replace: true });
     } catch (err) {
       setErrorMessage(err.message || 'Invalid credentials. Check your username or password.');
     } finally {
