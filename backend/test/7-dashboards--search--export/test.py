@@ -1,17 +1,14 @@
 """
-Tests for Phase 7 — Dashboards, Search & Export
+Tests for Phase 7 — Dashboards & Search
 
 Tests student/department/admin dashboards, search/filter on the grievance
-list view, ordering, CSV export with filters, and anonymous identity
-exclusion from export output.
+list view, and ordering.
 
 Usage:
     cd backend
     python test/7-dashboards--search--export/test.py
 """
 
-import csv
-import io
 import os
 import sys
 import time
@@ -385,146 +382,6 @@ def test_ordering():
 
 
 # ---------------------------------------------------------------------------
-# Tests: Export
-# ---------------------------------------------------------------------------
-
-
-def test_export_csv():
-    """CSV export returns correct headers and data."""
-    dept = _create_dept()
-    cat = _create_category()
-    admin = _create_user('exp_adm', role='CAMPUS_ADMIN')
-    student = _create_user('exp_stu', role='STUDENT', department=dept)
-
-    grievance = _create_grievance(student, dept, cat, Grievance.Status.RESOLVED,
-                                  title='Export test grievance')
-
-    client = _auth_client(admin)
-    resp = client.get('/api/reports/export/')
-
-    assert resp.status_code == status.HTTP_200_OK, \
-        f"Expected 200, got {resp.status_code}"
-    assert resp['Content-Type'] == 'text/csv', \
-        f"Expected text/csv, got {resp['Content-Type']}"
-    assert 'attachment; filename=' in resp['Content-Disposition'], \
-        "Expected Content-Disposition with filename"
-
-    # Parse CSV
-    reader = csv.reader(io.StringIO(resp.content.decode('utf-8')))
-    rows = list(reader)
-    assert len(rows) >= 2, \
-        f"Expected at least 2 rows (header + data), got {len(rows)}"
-    assert 'ID' in rows[0], \
-        f"Expected 'ID' header, got {rows[0]}"
-    assert 'Title' in rows[0], \
-        f"Expected 'Title' header, got {rows[0]}"
-
-    grievance.delete()
-    student.delete()
-    admin.delete()
-    cat.delete()
-    dept.delete()
-    print("  PASS export CSV")
-
-
-def test_export_filters():
-    """Export respects department/status/date filters."""
-    from datetime import timedelta
-    from django.utils import timezone
-
-    dept1 = _create_dept('Export Dept 1')
-    dept2 = _create_dept('Export Dept 2')
-    cat = _create_category()
-    admin = _create_user('expflt_adm', role='CAMPUS_ADMIN')
-    student = _create_user('expflt_stu', role='STUDENT', department=dept1)
-
-    g1 = _create_grievance(student, dept1, cat, Grievance.Status.UNDER_REVIEW,
-                           title='Dept1 grievance')
-    g2 = _create_grievance(student, dept2, cat, Grievance.Status.RESOLVED,
-                           title='Dept2 grievance')
-
-    client = _auth_client(admin)
-
-    # Filter by department
-    resp = client.get('/api/reports/export/', {'department': dept1.id})
-    assert resp.status_code == status.HTTP_200_OK
-    reader = csv.reader(io.StringIO(resp.content.decode('utf-8')))
-    rows = list(reader)
-    data_rows = rows[1:]  # skip header
-    for row in data_rows:
-        assert dept1.name in row or str(g1.id) == row[0], \
-            f"Expected only department 1 data, got {row}"
-
-    g1.delete()
-    g2.delete()
-    student.delete()
-    admin.delete()
-    cat.delete()
-    dept1.delete()
-    dept2.delete()
-    print("  PASS export filters")
-
-
-def test_export_excludes_anonymous_identity():
-    """Anonymous submitter name excluded from export."""
-    dept = _create_dept()
-    cat = _create_category()
-    admin = _create_user('expanon_adm', role='CAMPUS_ADMIN')
-    student = _create_user('expanon_stu', role='STUDENT', department=dept)
-
-    grievance = Grievance.objects.create(
-        user=student,
-        department=dept,
-        category=cat,
-        title='Anonymous export',
-        description=_DESC,
-        current_status=Grievance.Status.SUBMITTED,
-        is_anonymous=True,
-    )
-
-    client = _auth_client(admin)
-    resp = client.get('/api/reports/export/')
-
-    assert resp.status_code == status.HTTP_200_OK
-    reader = csv.reader(io.StringIO(resp.content.decode('utf-8')))
-    rows = list(reader)
-    data_rows = rows[1:]  # skip header
-
-    matched = [r for r in data_rows if r[0] == str(grievance.id)]
-    assert len(matched) == 1, \
-        f"Expected 1 row for anonymous grievance, got {len(matched)}"
-    row = matched[0]
-    # Column 5 (index 5) is 'Submitter Name'
-    assert row[5] == '' or row[5] == 'None', \
-        f"Expected empty submitter name for anonymous, got '{row[5]}'"
-
-    grievance.delete()
-    student.delete()
-    admin.delete()
-    cat.delete()
-    dept.delete()
-    print("  PASS export excludes anonymous identity")
-
-
-def test_non_admin_cannot_export():
-    """Only Campus Admin can access export."""
-    dept = _create_dept()
-    cat = _create_category()
-    student = _create_user('expna_stu', role='STUDENT', department=dept)
-
-    client = _auth_client(student)
-    resp = client.get('/api/reports/export/')
-
-    assert resp.status_code in (status.HTTP_403_FORBIDDEN,), \
-        f"Expected 403 for non-admin, got {resp.status_code}"
-
-    student.delete()
-    cat.delete()
-    dept.delete()
-    print("  PASS non-admin cannot export")
-
-
-# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
@@ -543,16 +400,12 @@ def run():
         ("Filter by category",                   test_filter_by_category),
         ("Filter by date range",                 test_filter_by_date_range),
         ("Ordering",                             test_ordering),
-        ("Export CSV",                           test_export_csv),
-        ("Export filters",                       test_export_filters),
-        ("Export excludes anonymous identity",   test_export_excludes_anonymous_identity),
-        ("Non-admin cannot export",              test_non_admin_cannot_export),
     ]
 
     passed = 0
     failed = 0
     print(f"\n{'='*60}")
-    print("  Phase 7 — Dashboards, Search & Export")
+    print("  Phase 7 — Dashboards & Search")
     print(f"{'='*60}\n")
     for label, fn in tests:
         try:

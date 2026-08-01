@@ -33,6 +33,24 @@ from grievances.models import Category, Grievance, StatusHistory
 def setup_db():
     """Ensure all database tables exist (safe to call multiple times)."""
     call_command('migrate', verbosity=0, interactive=False, run_syncdb=True)
+    # Wipe test-created data from previous aborted runs so the suite is re-runnable
+    from django.db.models import Q
+    from accounts.models import User as AccountUser
+    from grievances.models import Grievance as GrievanceModel
+    test_usernames = [
+        'submitter', 'anon_submit', 'list_stu1', 'list_stu2', 'list_admin',
+        'campus_admin', 'detail_test', 'ratelimit', 'valid_desc',
+        'secret_test', 'track_test', 'track_bad',
+    ]
+    test_users = AccountUser.objects.filter(username__in=test_usernames)
+    test_depts = Department.objects.filter(name__regex=r'^Test Dept [0-9a-f]{8}$')
+    test_cats = Category.objects.filter(name__regex=r'^Examination [0-9a-f]{8}$')
+    GrievanceModel.objects.filter(
+        Q(user__in=test_users) | Q(department__in=test_depts) | Q(category__in=test_cats)
+    ).delete()
+    test_users.delete()
+    test_depts.delete()
+    test_cats.delete()
 
 
 import uuid
@@ -43,7 +61,9 @@ def _create_dept(name=None):
     return Department.objects.create(name=name, department_type='ACADEMIC')
 
 
-def _create_category(name='Examination'):
+def _create_category(name=None):
+    if name is None:
+        name = f'Examination {uuid.uuid4().hex[:8]}'
     return Category.objects.create(name=name, description='Test category')
 
 
@@ -103,7 +123,12 @@ def test_submit_grievance():
 
     assert resp.status_code == status.HTTP_201_CREATED, f"Got {resp.status_code}: {resp.data}"
     assert resp.data['title'] == 'Test grievance'
-    assert resp.data['current_status'] == 'SUBMITTED'  # Phase 4 marks spam but Phase 3 doesn't have AI yet
+    # Submission stays SUBMITTED — routing only assigns the department;
+    # it moves to UNDER_REVIEW ("In Progress") only when the HOD acts.
+    assert resp.data['current_status'] == 'SUBMITTED', \
+        f"Expected SUBMITTED, got {resp.data['current_status']}"
+    assert resp.data['department'] == dept.pk, \
+        "Department should be assigned by routing"
 
     Grievance.objects.filter(id=resp.data['id']).delete()
     user.delete()

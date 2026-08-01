@@ -38,13 +38,10 @@ from grievances.models import Category, Grievance, StatusHistory
 # Helpers
 # ---------------------------------------------------------------------------
 
-_COUNTER = 0
-
+import uuid
 
 def _next():
-    global _COUNTER
-    _COUNTER += 1
-    return _COUNTER
+    return uuid.uuid4().hex[:8]
 
 
 def setup_db():

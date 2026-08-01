@@ -162,7 +162,7 @@ def test_grievance_all_statuses():
     cat = Category.objects.create(name=_cat_name('General'))
     user = User.objects.create_user(username=_uid('status_tester'), password='test123', role=User.Role.STUDENT, department=dept)
 
-    statuses = ['SUBMITTED', 'SPAM', 'UNDER_REVIEW', 'RESPONDED', 'REOPENED', 'ESCALATED', 'RESOLVED', 'CLOSED']
+    statuses = ['SUBMITTED', 'SPAM', 'UNDER_REVIEW', 'RESPONDED', 'REOPENED', 'ESCALATED', 'RESOLVED', 'REJECTED', 'CLOSED']
     for s in statuses:
         g = Grievance.objects.create(user=user, department=dept, category=cat, title=f'Test {s}', description='Test', current_status=s)
         assert g.current_status == s, f"Expected {s}, got {g.current_status}"

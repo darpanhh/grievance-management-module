@@ -47,6 +47,18 @@ def _next():
 def setup_db():
     """Ensure all database tables exist (safe to call multiple times)."""
     call_command('migrate', verbosity=0, interactive=False, run_syncdb=True)
+    # Wipe test-created data from previous runs so the suite is re-runnable
+    from django.db.models import Q
+    from accounts.models import User as AccountUser
+    test_depts = Department.objects.filter(name__regex=r'^TestDept \d+$')
+    test_cats = Category.objects.filter(name__regex=r'^TestCat \d+$')
+    test_users = AccountUser.objects.filter(username__regex=r'^[a-z_]+_\d+$')
+    Grievance.objects.filter(
+        Q(department__in=test_depts) | Q(category__in=test_cats) | Q(user__in=test_users)
+    ).delete()
+    test_users.delete()
+    test_depts.delete()
+    test_cats.delete()
 
 
 def _create_dept():
@@ -108,7 +120,7 @@ def test_route_to_selected_department():
     """
     When a submitter selects a department during submission, the grievance
     is routed to that department, even if it differs from the submitter's
-    own department.
+    own department.  The status stays SUBMITTED until the HOD acts.
     """
     student_dept = _create_dept()
     target_dept = _create_dept()
@@ -120,8 +132,8 @@ def test_route_to_selected_department():
     assert resp.status_code == status.HTTP_201_CREATED, \
         f"Submission failed: {resp.status_code}: {resp.data}"
 
-    assert resp.data['current_status'] == 'UNDER_REVIEW', \
-        f"Expected UNDER_REVIEW, got {resp.data['current_status']}"
+    assert resp.data['current_status'] == 'SUBMITTED', \
+        f"Expected SUBMITTED, got {resp.data['current_status']}"
 
     grievance = Grievance.objects.get(id=resp.data['id'])
     assert grievance.department.pk == target_dept.pk, \
@@ -156,8 +168,8 @@ def test_route_defaults_to_user_department():
     assert resp.status_code == status.HTTP_201_CREATED, \
         f"Submission failed: {resp.status_code}: {resp.data}"
 
-    assert resp.data['current_status'] == 'UNDER_REVIEW', \
-        f"Expected UNDER_REVIEW, got {resp.data['current_status']}"
+    assert resp.data['current_status'] == 'SUBMITTED', \
+        f"Expected SUBMITTED, got {resp.data['current_status']}"
     assert resp.data['department'] == dept.pk, \
         f"Expected department {dept.pk}, got {resp.data['department']}"
 
@@ -168,10 +180,10 @@ def test_route_defaults_to_user_department():
     print("  PASS route defaults to user department")
 
 
-def test_status_changes_to_under_review():
+def test_status_stays_submitted_after_routing():
     """
-    After the routing service processes a non-spam grievance, its status
-    transitions from SUBMITTED to UNDER_REVIEW.
+    Routing assigns the target department but must NOT change the status —
+    the grievance stays SUBMITTED until the department HOD takes action.
     """
     dept = _create_dept()
     cat = _create_category()
@@ -180,20 +192,21 @@ def test_status_changes_to_under_review():
 
     resp = _submit_grievance(client, dept, cat)
     assert resp.status_code == status.HTTP_201_CREATED
-    assert resp.data['current_status'] == 'UNDER_REVIEW', \
-        f"Expected UNDER_REVIEW, got {resp.data['current_status']}"
+    assert resp.data['current_status'] == 'SUBMITTED', \
+        f"Expected SUBMITTED, got {resp.data['current_status']}"
 
     Grievance.objects.filter(id=resp.data['id']).delete()
     user.delete()
     cat.delete()
     dept.delete()
-    print("  PASS status changes to UNDER_REVIEW")
+    print("  PASS status stays SUBMITTED after routing")
 
 
-def test_status_history_logged_on_routing():
+def test_no_status_history_on_routing():
     """
-    When a grievance is routed, a StatusHistory entry must be created
-    documenting the SUBMITTED -> UNDER_REVIEW transition.
+    Routing only assigns the department — because the status does not
+    change, no StatusHistory entry is created (history records actual
+    status transitions only, avoiding redundant entries).
     """
     dept = _create_dept()
     cat = _create_category()
@@ -206,23 +219,18 @@ def test_status_history_logged_on_routing():
     grievance = Grievance.objects.get(id=resp.data['id'])
     history = StatusHistory.objects.filter(grievance=grievance).order_by('created_at')
 
-    # Expected entries: SUBMITTED (from serializer.create) + UNDER_REVIEW (from routing)
-    assert history.count() >= 2, \
-        f"Expected at least 2 StatusHistory entries, got {history.count()}"
-
-    # Find the routing entry (UNDER_REVIEW)
-    routing_entry = history.filter(new_status='UNDER_REVIEW').first()
-    assert routing_entry is not None, "No StatusHistory entry for UNDER_REVIEW transition"
-    assert routing_entry.previous_status == 'SUBMITTED', \
-        f"Expected previous_status=SUBMITTED, got {routing_entry.previous_status}"
-    assert 'Routed to department' in routing_entry.remarks, \
-        f"Remarks should mention routing, got: {routing_entry.remarks}"
+    # Only the initial SUBMITTED entry from the serializer — no routing entry
+    assert history.count() == 1, \
+        f"Expected exactly 1 StatusHistory entry, got {history.count()}"
+    assert history[0].new_status == 'SUBMITTED', \
+        f"Expected initial SUBMITTED entry, got {history[0].new_status}"
+    assert history[0].previous_status is None
 
     grievance.delete()
     user.delete()
     cat.delete()
     dept.delete()
-    print("  PASS status history logged on routing")
+    print("  PASS no status history logged on routing (no redundant entries)")
 
 
 def test_category_never_affects_routing():
@@ -250,9 +258,9 @@ def test_category_never_affects_routing():
     assert resp_b.status_code == status.HTTP_201_CREATED
     grievance_b = Grievance.objects.get(id=resp_b.data['id'])
 
-    # Both should be UNDER_REVIEW and assigned to the same department
-    assert grievance_a.current_status == 'UNDER_REVIEW'
-    assert grievance_b.current_status == 'UNDER_REVIEW'
+    # Both should stay SUBMITTED and be assigned to the same department
+    assert grievance_a.current_status == 'SUBMITTED'
+    assert grievance_b.current_status == 'SUBMITTED'
     assert grievance_a.department.pk == dept.pk
     assert grievance_b.department.pk == dept.pk
 
@@ -357,8 +365,8 @@ def run():
     tests = [
         ("Route to selected department",        test_route_to_selected_department),
         ("Route defaults to user department",   test_route_defaults_to_user_department),
-        ("Status changes to UNDER_REVIEW",       test_status_changes_to_under_review),
-        ("StatusHistory logged on routing",      test_status_history_logged_on_routing),
+        ("Status stays SUBMITTED after routing", test_status_stays_submitted_after_routing),
+        ("No status history on routing",         test_no_status_history_on_routing),
         ("Category never affects routing",       test_category_never_affects_routing),
         ("HOD sees department grievances",       test_hod_sees_department_grievances),
         ("HOD cannot see other department",      test_hod_cannot_see_other_department),
