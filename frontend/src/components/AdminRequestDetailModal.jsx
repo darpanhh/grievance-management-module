@@ -61,11 +61,11 @@ const AdminRequestDetailModal = ({ requestItem, departments, onClose, onSuccess 
           setSubmitting(false);
           return;
         }
-        if (actionType === 'close') {
-          await api.post(`admin/requests/${requestItem.id}/close/`, {
+        if (actionType === 'resolve') {
+          await api.post(`admin/requests/${requestItem.id}/resolve/`, {
             admin_remark: adminRemark.trim(),
           });
-          onSuccess(`Escalation for ${gmsId} has been closed.`);
+          onSuccess(`Grievance ${gmsId} has been resolved.`);
         } else {
           await api.post(`admin/requests/${requestItem.id}/reject/`, {
             admin_remark: adminRemark.trim(),
@@ -82,7 +82,6 @@ const AdminRequestDetailModal = ({ requestItem, departments, onClose, onSuccess 
   };
 
   const isPending = requestItem.status === 'PENDING';
-  const isEscalation = requestItem.request_type === 'ESCALATION';
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -161,15 +160,13 @@ const AdminRequestDetailModal = ({ requestItem, departments, onClose, onSuccess 
               >
                 Forward to Department
               </button>
-              {isEscalation && (
-                <button
-                  type="button"
-                  className={`btn ${actionType === 'close' ? 'btn-success' : 'btn-outline'}`}
-                  onClick={() => setActionType('close')}
-                >
-                  Close Request
-                </button>
-              )}
+              <button
+                type="button"
+                className={`btn ${actionType === 'resolve' ? 'btn-success' : 'btn-outline'}`}
+                onClick={() => setActionType('resolve')}
+              >
+                Resolve Request
+              </button>
               <button
                 type="button"
                 className={`btn ${actionType === 'reject' ? 'btn-danger' : 'btn-outline'}`}
@@ -207,9 +204,9 @@ const AdminRequestDetailModal = ({ requestItem, departments, onClose, onSuccess 
                 placeholder={
                   actionType === 'forward'
                     ? 'Instructions or note for the department HOD...'
-                    : actionType === 'reject'
-                      ? 'Reason for rejecting student request...'
-                      : 'Reason for closing the escalated grievance...'
+                    : actionType === 'resolve'
+                      ? 'Admin remark/resolution details...'
+                      : 'Reason for rejecting student request...'
                 }
                 rows="3"
                 required={actionType !== 'forward'}
@@ -222,16 +219,16 @@ const AdminRequestDetailModal = ({ requestItem, departments, onClose, onSuccess 
                 type="submit"
                 className={`btn ${
                   actionType === 'forward' ? 'btn-primary'
-                    : actionType === 'reject' ? 'btn-danger'
-                      : 'btn-success'
+                    : actionType === 'resolve' ? 'btn-success'
+                      : 'btn-danger'
                 }`}
                 disabled={submitting}
               >
                 {submitting
                   ? 'Processing...'
                   : actionType === 'forward' ? 'Forward to Department'
-                    : actionType === 'reject' ? 'Reject Request'
-                      : 'Close Request'}
+                    : actionType === 'resolve' ? 'Resolve Request'
+                      : 'Reject Request'}
               </button>
             </div>
           </section>

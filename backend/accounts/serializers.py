@@ -11,11 +11,15 @@ class UserSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(
         source='department.name', read_only=True, allow_null=True
     )
+    full_name = serializers.SerializerMethodField()
+
+    def get_full_name(self, obj):
+        return obj.get_full_name() or obj.username
 
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'email', 'first_name', 'last_name',
+            'id', 'username', 'email', 'first_name', 'last_name', 'full_name',
             'role', 'department', 'department_name', 'contact_number',
         ]
 

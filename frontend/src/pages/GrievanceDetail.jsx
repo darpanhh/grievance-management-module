@@ -41,7 +41,7 @@ const GrievanceDetail = () => {
 
   const closeModal = () => { setModal(null); setContent(''); setSelectedStatus('UNDER_REVIEW'); };
   const openModal = (action) => { setToast(''); setContent(''); setSelectedStatus('UNDER_REVIEW'); setModal(action); };
-  
+
   const actionError = (requestError) => {
     const data = requestError.response?.data;
     if (typeof data === 'string') return data;
@@ -97,7 +97,7 @@ const GrievanceDetail = () => {
   const userDeptId = user?.department?.id || user?.department;
   const grievanceDeptId = grievance?.department?.id || grievance?.department;
   const isSameDept = Boolean(userDeptId && grievanceDeptId && Number(userDeptId) === Number(grievanceDeptId));
-  
+
   // Submitter capabilities
   const isSubmitter = Number(grievance.submitter) === Number(user?.id);
   const canSubmitterReopen = isSubmitter && ['RESOLVED', 'RESPONDED'].includes(status);
@@ -276,7 +276,7 @@ const GrievanceDetail = () => {
           {status === 'SPAM' && (
             <div className="hod-action-panel error-state" style={{ borderColor: '#fecaca', background: '#fef2f2' }}>
               <div className="hod-action-panel-header">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                 <div>
                   <h3 style={{ color: '#991b1b' }}>Flagged as Spam</h3>
                   <p style={{ color: '#b91c1c' }}>This grievance was flagged by the automated AI spam filter and requires Campus Admin review.</p>
@@ -320,7 +320,7 @@ const GrievanceDetail = () => {
           {canRespond && (
             <div className="hod-action-panel">
               <div className="hod-action-panel-header">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                 <div>
                   <h3>Department HOD Action & Status Management</h3>
                   <p>Provide an official response and update the status for this grievance (Currently: <strong>{statusLabel(status)}</strong>).</p>
@@ -336,7 +336,7 @@ const GrievanceDetail = () => {
           {(canSubmitterReopen || canSubmitterClose || canAdminResolve || (canAdminClose && status !== 'SPAM')) && (
             <div className="hod-action-panel">
               <div className="hod-action-panel-header">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
                 <div>
                   <h3>Grievance Controls</h3>
                   <p>{isSubmitter ? 'Review the response. You can submit a Reopen request to Campus Admin or Close the grievance.' : 'Campus Admin lifecycle controls.'}</p>
@@ -369,7 +369,7 @@ const GrievanceDetail = () => {
           <div className="modal-backdrop" role="presentation">
             <form className={`workflow-modal ${modal === 'adminClose' ? 'admin-close-modal' : ''}`} onSubmit={(event) => { event.preventDefault(); runAction(modal); }}>
               <h2>{modal === 'respond' ? 'HOD Response & Status Update' : modal === 'adminClose' ? 'Close Grievance with Remarks' : 'Resolve Escalated Grievance'}</h2>
-              
+
               {modal === 'respond' ? (
                 <>
                   <label htmlFor="workflow-status">Select New Status</label>
@@ -399,10 +399,10 @@ const GrievanceDetail = () => {
               )}
 
               <p>{modal === 'respond' ? 'Write your response and select the target status for this grievance.' : modal === 'adminClose' ? 'Add a clear closure remark for the student and the audit trail.' : 'Optionally add a final resolution note.'}</p>
-              
+
               <label htmlFor="workflow-content">{modal === 'adminClose' ? 'Closure Remarks' : 'Official Response / Remarks'} {modal === 'adminClose' && <span className="required-star">*</span>}</label>
               <textarea id="workflow-content" value={content} onChange={(event) => setContent(event.target.value)} placeholder={modal === 'adminClose' ? 'Explain why this grievance is being closed…' : 'Write your official response or remarks…'} required={modal === 'respond' || modal === 'adminClose'} rows="6" autoFocus />
-              
+
               <div className="modal-actions">
                 <button type="button" className="btn btn-outline" onClick={closeModal} disabled={submitting}>Cancel</button>
                 <button type="submit" className={`btn ${modal === 'adminClose' ? 'btn-danger' : 'btn-primary'}`} disabled={submitting}>{submitting ? 'Saving…' : modal === 'respond' ? 'Update Status & Post' : modal === 'adminClose' ? 'Close Grievance' : 'Confirm Resolution'}</button>

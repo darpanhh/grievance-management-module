@@ -100,9 +100,9 @@ const Navbar = () => {
                   onClick={() => setDropdownOpen(!dropdownOpen)}
                 >
                   <div className="avatar-circle">
-                    {(user.email || user.username || 'U')[0].toUpperCase()}
+                    {(user.first_name || user.username || user.email || 'U')[0].toUpperCase()}
                   </div>
-                  <span className="user-name">{user.username || user.email}</span>
+                  <span className="user-name">{user.first_name || user.username || user.email}</span>
                   <span className={`dropdown-caret ${dropdownOpen ? 'open' : ''}`}>▼</span>
                 </button>
 

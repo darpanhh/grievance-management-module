@@ -18,6 +18,7 @@ class Command(BaseCommand):
             
 
             # Administrative
+            {"name": "Administrative Department", "type": Department.DepartmentType.ADMINISTRATIVE},
             {"name": "Library", "type": Department.DepartmentType.ADMINISTRATIVE},
             {"name": "Security Office", "type": Department.DepartmentType.ADMINISTRATIVE},
             {"name": "Accounts Office", "type": Department.DepartmentType.ADMINISTRATIVE},

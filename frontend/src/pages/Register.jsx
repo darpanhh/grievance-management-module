@@ -62,6 +62,7 @@ const Register = () => {
           { id: 6, name: 'Department of Science & Humanities', code: 'DOSH' },
           { id: 7, name: 'Examination & Student Administration Wing', code: 'EXAM' },
           { id: 8, name: 'Hostel & Campus Infrastructure Maintenance', code: 'INFRA' },
+          { id: 9, name: 'Administrative Department', code: 'ADMIN' },
         ];
         setDepartments(fallbackDepts);
         setFormData((prev) => ({ ...prev, department: String(fallbackDepts[0].id) }));

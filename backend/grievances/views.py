@@ -1347,11 +1347,11 @@ def admin_resolve_request(request, pk):
     """
     POST /api/admin/requests/{pk}/resolve/
 
-    Campus Admin action to resolve an escalated grievance directly.
+    Campus Admin action to resolve a request or appeal directly
+    (Rejection Appeal, Reopened Appeal, Spam Appeal, Escalation).
 
     Request status transitions to RESOLVED. The underlying grievance is
-    resolved (ESCALATED -> RESOLVED -> CLOSED, auto-close) and its
-    escalation fields are cleared.
+    marked as RESOLVED with Campus Admin remarks.
     """
     req_obj = get_object_or_404(
         Request.objects.select_related('grievance'),
@@ -1364,22 +1364,15 @@ def admin_resolve_request(request, pk):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if req_obj.request_type != Request.RequestType.ESCALATION:
-        return Response(
-            {'error': 'Only escalation requests can be resolved from this endpoint.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
     admin_remark = request.data.get('admin_remark', '').strip()
-    content = request.data.get('content', '').strip()
-
-    grievance = req_obj.grievance
-    if grievance.current_status != Grievance.Status.ESCALATED:
+    if not admin_remark:
         return Response(
-            {'error': 'Grievance must be in ESCALATED status.'},
+            {'error': 'Campus Admin remark is required when resolving a request.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    content = request.data.get('content', '').strip()
+    grievance = req_obj.grievance
     admin_name = request.user.get_full_name() or request.user.username
 
     # Update Request record
@@ -1398,11 +1391,11 @@ def admin_resolve_request(request, pk):
             content=content,
         )
 
-    # Resolve the escalated grievance (signal auto-logs StatusHistory)
+    # Resolve the grievance (signal auto-logs StatusHistory)
     grievance._action_by = request.user
     grievance._action_remarks = (
-        f"Escalation resolved by Campus Admin {admin_name}."
-        f"{f' Remarks: {admin_remark}' if admin_remark else ''}"
+        f"Request ({req_obj.get_request_type_display()}) resolved by Campus Admin {admin_name}. "
+        f"Admin remark: {admin_remark}"
     )
     grievance.current_status = Grievance.Status.RESOLVED
     grievance.escalation_level = 0
@@ -1410,14 +1403,6 @@ def admin_resolve_request(request, pk):
     grievance.save(update_fields=[
         'current_status', 'escalation_level', 'escalated_to', 'updated_at',
     ])
-
-    # Auto-close: RESOLVED -> CLOSED (final — no submitter check)
-    grievance._action_by = request.user
-    grievance._action_remarks = (
-        f"Auto-closed after Campus Admin {admin_name} resolved the escalated grievance."
-    )
-    grievance.current_status = Grievance.Status.CLOSED
-    grievance.save(update_fields=['current_status'])
 
     send_resolution_email(grievance)
 

@@ -3,12 +3,15 @@ import { Link } from 'react-router-dom';
 import api from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import SearchFilter from '../components/SearchFilter';
+import { useAuth } from '../contexts/AuthContext';
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(date)) : '—';
 
 const FILTER_STATUSES = ['SUBMITTED', 'SPAM', 'UNDER_REVIEW', 'REOPENED', 'ESCALATED', 'RESOLVED', 'REJECTED', 'CLOSED'];
 
 const DepartmentDashboard = () => {
+  const { user } = useAuth();
+  const departmentName = user?.department_name || 'Department';
   const [grievances, setGrievances] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -100,8 +103,8 @@ const DepartmentDashboard = () => {
         <header className="dashboard-heading">
           <div>
             <span>Department Portal</span>
-            <h1>Department Grievances</h1>
-            <p>Review, respond to, and update statuses for grievances assigned to your department.</p>
+            <h1>{departmentName}</h1>
+            {/* <p>Review and update grievances.</p> */}
           </div>
         </header>
 
