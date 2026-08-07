@@ -339,30 +339,38 @@ const AdminDashboard = () => {
               >
                 All Requests
               </button>
-              <button
-                className={`filter-btn ${requestTypeFilter === 'REOPEN' ? 'active' : ''}`}
-                onClick={() => setRequestTypeFilter('REOPEN')}
-              >
-                Reopen Requests ({metrics.pending_requests_breakdown?.REOPEN || 0})
-              </button>
-              <button
-                className={`filter-btn ${requestTypeFilter === 'REJECTION_APPEAL' ? 'active' : ''}`}
-                onClick={() => setRequestTypeFilter('REJECTION_APPEAL')}
-              >
-                Rejection Appeals ({metrics.pending_requests_breakdown?.REJECTION_APPEAL || 0})
-              </button>
-              <button
-                className={`filter-btn ${requestTypeFilter === 'SPAM_APPEAL' ? 'active' : ''}`}
-                onClick={() => setRequestTypeFilter('SPAM_APPEAL')}
-              >
-                Spam Appeals ({metrics.pending_requests_breakdown?.SPAM_APPEAL || 0})
-              </button>
-              <button
-                className={`filter-btn ${requestTypeFilter === 'ESCALATION' ? 'active' : ''}`}
-                onClick={() => setRequestTypeFilter('ESCALATION')}
-              >
-                Escalations ({metrics.pending_requests_breakdown?.ESCALATION || 0})
-              </button>
+              {(metrics.pending_requests_breakdown?.ESCALATION || 0) > 0 && (
+                <button
+                  className={`filter-btn ${requestTypeFilter === 'ESCALATION' ? 'active' : ''}`}
+                  onClick={() => setRequestTypeFilter('ESCALATION')}
+                >
+                  Escalations ({metrics.pending_requests_breakdown?.ESCALATION || 0})
+                </button>
+              )}
+              {(metrics.pending_requests_breakdown?.REJECTION_APPEAL || 0) > 0 && (
+                <button
+                  className={`filter-btn ${requestTypeFilter === 'REJECTION_APPEAL' ? 'active' : ''}`}
+                  onClick={() => setRequestTypeFilter('REJECTION_APPEAL')}
+                >
+                  Rejection Appeals ({metrics.pending_requests_breakdown?.REJECTION_APPEAL || 0})
+                </button>
+              )}
+              {(metrics.pending_requests_breakdown?.SPAM_APPEAL || 0) > 0 && (
+                <button
+                  className={`filter-btn ${requestTypeFilter === 'SPAM_APPEAL' ? 'active' : ''}`}
+                  onClick={() => setRequestTypeFilter('SPAM_APPEAL')}
+                >
+                  Spam Appeals ({metrics.pending_requests_breakdown?.SPAM_APPEAL || 0})
+                </button>
+              )}
+              {(metrics.pending_requests_breakdown?.REOPEN || 0) > 0 && (
+                <button
+                  className={`filter-btn ${requestTypeFilter === 'REOPEN' ? 'active' : ''}`}
+                  onClick={() => setRequestTypeFilter('REOPEN')}
+                >
+                  Reopen Requests ({metrics.pending_requests_breakdown?.REOPEN || 0})
+                </button>
+              )}
             </div>
           </>
         )}

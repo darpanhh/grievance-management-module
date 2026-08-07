@@ -37,7 +37,7 @@ def route_grievance(
     ----------
     grievance:
         The Grievance instance to route. Expected to currently be in
-        SUBMITTED status (i.e. not flagged as spam).
+        SUBMITTED status.
     action_by:
         Kept for API compatibility (the user responsible for routing).
     remarks:
@@ -47,19 +47,10 @@ def route_grievance(
     -------
     Grievance
         The same instance, refreshed after ``save()``.
-
-    Notes
-    -----
-    The function is a no-op for SPAM grievances — spam must be reviewed by
-    an admin before routing.
     """
     # ------------------------------------------------------------------
     # Defensive guards
     # ------------------------------------------------------------------
-    if grievance.current_status == Grievance.Status.SPAM:
-        # Spam classifications are pending admin review; do not auto-route.
-        return grievance
-
     if grievance.current_status != Grievance.Status.SUBMITTED:
         # Only freshly-submitted grievances should be routed.
         return grievance

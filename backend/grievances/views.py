@@ -11,9 +11,12 @@ Phase 5: Grievance Routing
   - Submission pipeline transitions SUBMITTED -> UNDER_REVIEW (when not spam)
 """
 
+import logging
 from datetime import date
 
+from django.conf import settings
 from django.contrib.auth.hashers import check_password
+from django.core.mail import send_mail
 from django.db.models import Count
 from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404
@@ -24,6 +27,8 @@ from rest_framework.exceptions import PermissionDenied, Throttled
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
+
+logger = logging.getLogger(__name__)
 
 from accounts.models import Department
 from .models import AIAnalysis, Category, Grievance, Request, StatusHistory
@@ -126,7 +131,7 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
         if user.role == 'STUDENT' or user.role == 'STAFF':
             qs = qs.filter(user=user)
         elif user.role == 'HOD':
-            qs = qs.filter(department=user.department).exclude(current_status=Grievance.Status.SPAM)
+            qs = qs.filter(department=user.department)
         # CAMPUS_ADMIN sees everything — no additional filter
 
         return qs.order_by('-created_at')
@@ -155,7 +160,6 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
         if status_group == 'PENDING':
             queryset = queryset.filter(current_status__in=[
                 Grievance.Status.SUBMITTED,
-                Grievance.Status.APPEAL_PENDING,
             ])
         elif status_group == 'IN_PROGRESS':
             queryset = queryset.filter(current_status=Grievance.Status.UNDER_REVIEW)
@@ -237,35 +241,21 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
             classification_reason=result['classification_reason'],
         )
 
-        if result['spam_prediction']:
-            # Mark as spam and log the transition via pre_save signal.
-            # The AI detector performed this action, so the actor is the
-            # system (action_by=None renders as "System" in the UI).
-            grievance._action_by = None
-            grievance._action_remarks = (
-                f"Flagged as spam by AI detector "
-                f"(confidence: {result['confidence_score']:.2f}). "
-                f"{result['classification_reason']}"
-            )
-            grievance.current_status = Grievance.Status.SPAM
-            grievance.save(update_fields=['current_status'])
-        else:
-            # --------------------------------------------------------------
-            # Phase 5 — Automatic Routing
-            # --------------------------------------------------------------
-            # Only route non-spam grievances.  The routing service is
-            # responsible for setting the target department (selected or
-            # fallback) and transitioning the status to UNDER_REVIEW.
-            route_grievance(
-                grievance,
-                action_by=request.user,
-            )
+        # Phase 5 — Automatic Routing
+        route_grievance(
+            grievance,
+            action_by=request.user,
+        )
 
         # Build response data
         data = GrievanceDetailSerializer(grievance, context={'request': request}).data
 
-        # Notify the HOD about the new grievance
-        if not result['spam_prediction']:
+        # Spam grievances go to UNDER_REVIEW so HOD can review them
+        if result['spam_prediction']:
+            grievance.current_status = Grievance.Status.UNDER_REVIEW
+            grievance.save(update_fields=['current_status'])
+            data = GrievanceDetailSerializer(grievance, context={'request': request}).data
+        else:
             send_submission_email(grievance)
 
         # If anonymous, include the plain-text secret code (only returned once)
@@ -319,13 +309,10 @@ class GrievanceDetailView(generics.RetrieveAPIView):
             # anonymous ones routed to another department), plus the
             # department's non-spam grievances.
             qs = qs.filter(
-                Q(user=user) | (
-                    Q(department=user.department)
-                    & ~Q(current_status=Grievance.Status.SPAM)
-                )
+                Q(user=user) | Q(department=user.department)
             )
         elif user.role == 'HOD':
-            qs = qs.filter(department=user.department).exclude(current_status=Grievance.Status.SPAM)
+            qs = qs.filter(department=user.department)
         # CAMPUS_ADMIN sees everything
 
         return qs
@@ -380,130 +367,9 @@ def grievance_track(request):
 
 
 # ---------------------------------------------------------------------------
-# Phase 4 — AI Spam Filtering: Admin Queue & Appeal
+# Phase 4 — AI Analysis
+# (Spam filtering removed — spam/responded statuses no longer used)
 # ---------------------------------------------------------------------------
-
-
-class SpamQueueView(generics.ListAPIView):
-    """
-    GET /api/admin/spam-queue/
-
-    Lists all grievances currently classified as SPAM.  Campus Admin only.
-
-    Returns a paginated list with the spam confidence score and reason
-    so the admin can decide whether to reinstate or confirm the spam
-    classification.
-    """
-
-    serializer_class = GrievanceListSerializer
-    permission_classes = (permissions.IsAuthenticated, IsCampusAdmin)
-    pagination_class = None  # Spam queue is typically small
-
-    def get_queryset(self):
-        return Grievance.objects.filter(
-            current_status=Grievance.Status.SPAM,
-        ).select_related(
-            'category', 'department', 'user',
-        ).order_by('-updated_at')
-
-
-@api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
-def reinstate_spam(request, pk):
-    """
-    POST /api/admin/spam-queue/{pk}/reinstate/
-
-    Campus Admin only.  Reverses the spam classification — transitions the
-    grievance from SPAM back to SUBMITTED so it can enter the normal
-    routing workflow.
-
-    Logs a StatusHistory entry for the transition.
-    """
-    if request.user.role != 'CAMPUS_ADMIN':
-        raise PermissionDenied('Only Campus Admins can reinstate grievances.')
-
-    grievance = get_object_or_404(
-        Grievance.objects.select_related('ai_analysis'),
-        pk=pk,
-        current_status=Grievance.Status.SPAM,
-    )
-
-    # Update the AI analysis record to reflect the override
-    try:
-        ai = grievance.ai_analysis
-        ai.spam_prediction = False
-        ai.classification_reason = (
-            f"Overridden by admin ({request.user.get_full_name() or request.user.username}). "
-            f"Original result: {ai.classification_reason}"
-        )
-        ai.save(update_fields=['spam_prediction', 'classification_reason'])
-    except AIAnalysis.DoesNotExist:
-        pass
-
-    # Ensure department is populated if missing
-    if not grievance.department and grievance.user:
-        target_dept = getattr(grievance.user, "department", None)
-        if target_dept:
-            grievance.department = target_dept
-
-    # Transition status to SUBMITTED (stays SUBMITTED as requested)
-    grievance._action_by = request.user
-    grievance._action_remarks = 'Grievance reinstated by Campus Admin — status set to Submitted.'
-    grievance.current_status = Grievance.Status.SUBMITTED
-    grievance.save(update_fields=['department', 'current_status'])
-
-    detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
-    return Response(detail, status=status.HTTP_200_OK)
-
-
-@api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
-def appeal_spam(request, pk):
-    """
-    POST /api/grievances/{pk}/appeal-spam/
-
-    Allows the submitter to appeal a spam classification.  Logs a
-    StatusHistory entry recording the appeal — the grievance stays in
-    SPAM status until a Campus Admin reviews and reinstates it.
-
-    Only the original submitter can appeal.
-    """
-    grievance = get_object_or_404(Grievance, pk=pk)
-
-    # Only the submitter can appeal their own grievance
-    if grievance.user != request.user:
-        raise PermissionDenied('You can only appeal your own grievance.')
-
-    if grievance.current_status != Grievance.Status.SPAM:
-        return Response(
-            {'error': 'Only grievances classified as SPAM can be appealed.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    StatusHistory.objects.create(
-        grievance=grievance,
-        previous_status=Grievance.Status.SPAM,
-        new_status=Grievance.Status.SPAM,  # stays SPAM pending admin review
-        action_by=request.user,
-        remarks='Submitter has appealed the spam classification — pending admin review.',
-    )
-
-    # Notify Campus Admins about the spam appeal
-    send_request_notification_email(
-        grievance,
-        Request.RequestType.SPAM_APPEAL,
-        request.data.get('content', '').strip() or request.data.get('remarks', '').strip(),
-    )
-
-    return Response(
-        {
-            'detail': (
-                'Your appeal has been submitted. A Campus Administrator '
-                'will review your grievance and reinstate it if appropriate.'
-            ),
-        },
-        status=status.HTTP_200_OK,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -513,29 +379,24 @@ def appeal_spam(request, pk):
 VALID_TRANSITIONS = {
     Grievance.Status.SUBMITTED: {
         Grievance.Status.UNDER_REVIEW,
-        Grievance.Status.SPAM,
+        Grievance.Status.IN_PROGRESS,
         Grievance.Status.REJECTED,
     },
-    Grievance.Status.SPAM: {
-        Grievance.Status.SUBMITTED,
-        Grievance.Status.CLOSED,
-        Grievance.Status.APPEAL_PENDING,
-    },
     Grievance.Status.UNDER_REVIEW: {
-        Grievance.Status.RESPONDED,
+        Grievance.Status.IN_PROGRESS,
         Grievance.Status.ESCALATED,
         Grievance.Status.RESOLVED,
         Grievance.Status.REJECTED,
     },
-    Grievance.Status.RESPONDED: {
+    Grievance.Status.IN_PROGRESS: {
         Grievance.Status.RESOLVED,
         Grievance.Status.REOPENED,
         Grievance.Status.ESCALATED,
         Grievance.Status.REJECTED,
-        Grievance.Status.APPEAL_PENDING,
     },
     Grievance.Status.REOPENED: {
-        Grievance.Status.RESPONDED,
+        Grievance.Status.IN_PROGRESS,
+        Grievance.Status.UNDER_REVIEW,
         Grievance.Status.ESCALATED,
         Grievance.Status.RESOLVED,
         Grievance.Status.REJECTED,
@@ -547,18 +408,10 @@ VALID_TRANSITIONS = {
     },
     Grievance.Status.RESOLVED: {
         Grievance.Status.CLOSED,
-        Grievance.Status.APPEAL_PENDING,
     },
     Grievance.Status.REJECTED: {
         Grievance.Status.CLOSED,
         Grievance.Status.REOPENED,
-        Grievance.Status.APPEAL_PENDING,
-    },
-    Grievance.Status.APPEAL_PENDING: {
-        Grievance.Status.UNDER_REVIEW,
-        Grievance.Status.SUBMITTED,
-        Grievance.Status.REJECTED,
-        Grievance.Status.SPAM,
     },
     Grievance.Status.CLOSED: set(),
 }
@@ -581,14 +434,20 @@ def respond_to_grievance(request, pk):
     """
     POST /api/grievances/{pk}/respond/
 
-    Allows an HOD to respond to a grievance that is UNDER_REVIEW or
-    REOPENED.  The HOD must belong to the grievance's assigned department.
+    Allows an HOD to respond to a grievance that is SUBMITTED, UNDER_REVIEW,
+    IN_PROGRESS, or REOPENED.  The HOD must belong to the grievance's
+    assigned department.
+
+    Campus Admin can respond to ESCALATED grievances.
 
     Creates a ``Response`` record and transitions the grievance status
-    to RESPONDED.
+    to IN_PROGRESS (or another status chosen by the HOD/Campus Admin).
     """
-    if request.user.role != 'HOD':
-        raise PermissionDenied('Only HODs can respond to grievances.')
+    is_hod = request.user.role == 'HOD'
+    is_admin = request.user.role == 'CAMPUS_ADMIN'
+
+    if not (is_hod or is_admin):
+        raise PermissionDenied('Only HODs or Campus Admin can respond to grievances.')
 
     grievance = get_object_or_404(
         Grievance.objects.select_related('department'),
@@ -596,7 +455,7 @@ def respond_to_grievance(request, pk):
     )
 
     # HOD must belong to the grievance's department (if both are set)
-    if grievance.department and request.user.department and grievance.department != request.user.department:
+    if is_hod and grievance.department and request.user.department and grievance.department != request.user.department:
         raise PermissionDenied(
             'You can only respond to grievances in your own department.'
         )
@@ -606,15 +465,22 @@ def respond_to_grievance(request, pk):
         grievance.department = request.user.department
         grievance.save(update_fields=['department'])
 
-    if grievance.current_status not in (
-        Grievance.Status.SUBMITTED,
-        Grievance.Status.UNDER_REVIEW,
-        Grievance.Status.REOPENED,
-    ):
+    # HOD can respond to SUBMITTED, UNDER_REVIEW, IN_PROGRESS, REOPENED
+    # Campus Admin can respond to any actionable status
+    allowed_statuses = (
+        (Grievance.Status.SUBMITTED, Grievance.Status.UNDER_REVIEW,
+         Grievance.Status.IN_PROGRESS, Grievance.Status.REOPENED)
+        if is_hod else
+        (Grievance.Status.SUBMITTED, Grievance.Status.UNDER_REVIEW,
+         Grievance.Status.IN_PROGRESS, Grievance.Status.REOPENED,
+         Grievance.Status.ESCALATED)
+    )
+
+    if grievance.current_status not in allowed_statuses:
         return Response(
             {
                 'error': (
-                    'Grievance must be SUBMITTED, UNDER_REVIEW, or REOPENED '
+                    'Grievance must be SUBMITTED, UNDER_REVIEW, IN_PROGRESS, or REOPENED '
                     'before it can be responded to.'
                 ),
             },
@@ -628,13 +494,13 @@ def respond_to_grievance(request, pk):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Determine requested status (defaulting to RESPONDED)
+    # Determine requested status (defaulting to IN_PROGRESS)
     requested_status = request.data.get('status', '').upper()
     valid_statuses = [choice[0] for choice in Grievance.Status.choices]
     if requested_status and requested_status in valid_statuses:
         target_status = requested_status
     else:
-        target_status = Grievance.Status.RESPONDED
+        target_status = Grievance.Status.IN_PROGRESS
 
     # Create the Response record
     from .models import Response as GrievanceResponse
@@ -646,9 +512,42 @@ def respond_to_grievance(request, pk):
 
     # Transition status (signal auto-logs StatusHistory)
     grievance._action_by = request.user
-    grievance._action_remarks = f"HOD Response: \"{content}\""
+    role_label = 'Campus Admin' if request.user.role == 'CAMPUS_ADMIN' else 'HOD'
+    grievance._action_remarks = f"{role_label} Response: \"{content}\""
     grievance.current_status = target_status
     grievance.save(update_fields=['current_status'])
+
+    # If Campus Admin responds to an ESCALATED grievance
+    if is_admin:
+        if target_status in (Grievance.Status.RESOLVED, Grievance.Status.REJECTED):
+            # Final action — mark escalation request as RESOLVED
+            Request.objects.filter(
+                grievance=grievance,
+                request_type=Request.RequestType.ESCALATION,
+                status=Request.RequestStatus.PENDING,
+            ).update(
+                status=Request.RequestStatus.RESOLVED,
+                reviewed_by_admin=request.user,
+                admin_remark=content,
+                resolved_at=timezone.now(),
+            )
+        else:
+            # Intermediate action (IN_PROGRESS, UNDER_REVIEW) — update Request status to match grievance
+            req_status_map = {
+                Grievance.Status.IN_PROGRESS: Request.RequestStatus.FORWARDED,
+                Grievance.Status.UNDER_REVIEW: Request.RequestStatus.FORWARDED,
+                Grievance.Status.SUBMITTED: Request.RequestStatus.FORWARDED,
+            }
+            req_status = req_status_map.get(target_status, Request.RequestStatus.FORWARDED)
+            Request.objects.filter(
+                grievance=grievance,
+                request_type=Request.RequestType.ESCALATION,
+                status=Request.RequestStatus.PENDING,
+            ).update(
+                status=req_status,
+                reviewed_by_admin=request.user,
+                admin_remark=content,
+            )
 
     # Notify the submitter about the response
     send_response_email(grievance)
@@ -659,20 +558,119 @@ def respond_to_grievance(request, pk):
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
+def hod_escalate_grievance(request, pk):
+    """
+    POST /api/grievances/{pk}/hod-escalate/
+
+    Allows an HOD to escalate a grievance to Campus Admin when the grievance
+    is NOT assigned to the HOD's department. The HOD must provide a reason.
+    Transitions status to ESCALATED and creates a Request for Campus Admin review.
+    """
+    if request.user.role != 'HOD':
+        raise PermissionDenied('Only HODs can escalate grievances to Campus Admin.')
+
+    grievance = get_object_or_404(
+        Grievance.objects.select_related('department', 'user'),
+        pk=pk,
+    )
+
+    # Only allowed from actionable statuses
+    if grievance.current_status not in (
+        Grievance.Status.SUBMITTED,
+        Grievance.Status.UNDER_REVIEW,
+        Grievance.Status.IN_PROGRESS,
+        Grievance.Status.REOPENED,
+    ):
+        return Response(
+            {'error': 'Grievance cannot be escalated from its current status.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    reason = request.data.get('reason', '').strip()
+    if not reason:
+        return Response(
+            {'error': 'A reason for escalation is required.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Find a Campus Admin to assign
+    from .services.escalation_service import find_next_officer
+    next_officer = find_next_officer(grievance)
+    if next_officer is None:
+        return Response(
+            {'error': 'No Campus Admin available to receive this escalation.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    previous_status = grievance.current_status
+    hod_name = request.user.get_full_name() or request.user.username
+
+    # Create Request record for Campus Admin queue
+    Request.objects.create(
+        grievance=grievance,
+        student=None,
+        request_type=Request.RequestType.ESCALATION,
+        reason=f"HOD {hod_name} escalated: {reason}",
+        status=Request.RequestStatus.PENDING,
+        original_status=previous_status,
+    )
+
+    # Transition status (signal auto-logs StatusHistory)
+    grievance.escalation_level = 1
+    grievance.escalated_to = next_officer
+    grievance._action_by = request.user
+    grievance._action_remarks = f"HOD escalated to Campus Admin: {reason}"
+    grievance.current_status = Grievance.Status.ESCALATED
+    grievance.save(update_fields=[
+        'escalation_level', 'escalated_to',
+        'current_status', 'updated_at',
+    ])
+
+    # Create a Response record so it shows in Official Responses
+    from .models import Response as GrievanceResponse
+    GrievanceResponse.objects.create(
+        grievance=grievance,
+        responder=request.user,
+        content=reason,
+    )
+
+    # Notify submitter
+    send_response_email(grievance)
+
+    # Refresh to ensure nested serializer picks up the new Response
+    grievance.refresh_from_db()
+    detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
+    return Response(detail, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
 def resolve_grievance(request, pk):
     """
     POST /api/grievances/{pk}/resolve/
 
-    Allows the original submitter to resolve their own grievance when
-    the status is RESPONDED, RESOLVED, or UNDER_REVIEW. Transitions to RESOLVED.
+    Allows the original submitter, HOD, or Campus Admin to resolve a grievance.
+    Campus Admin can only resolve ESCALATED grievances.
     """
     grievance = get_object_or_404(Grievance, pk=pk)
 
-    if grievance.user != request.user and request.user.role != 'CAMPUS_ADMIN':
+    is_submitter = grievance.user == request.user
+    is_hod = request.user.role == 'HOD'
+    is_admin = request.user.role == 'CAMPUS_ADMIN'
+
+    if not (is_submitter or is_hod or is_admin):
         raise PermissionDenied('You can only resolve your own grievance.')
 
-    if grievance.current_status not in (
-        Grievance.Status.RESPONDED,
+    # Campus Admin can resolve ESCALATED, IN_PROGRESS, or UNDER_REVIEW
+    if is_admin and grievance.current_status not in (
+        Grievance.Status.ESCALATED,
+        Grievance.Status.IN_PROGRESS,
+        Grievance.Status.UNDER_REVIEW,
+    ):
+        raise PermissionDenied('Campus Admin can only resolve ESCALATED, IN_PROGRESS, or UNDER_REVIEW grievances.')
+
+    if not is_admin and grievance.current_status not in (
+        Grievance.Status.IN_PROGRESS,
         Grievance.Status.UNDER_REVIEW,
         Grievance.Status.REOPENED,
     ):
@@ -686,9 +684,23 @@ def resolve_grievance(request, pk):
 
     # Transition status (signal auto-logs StatusHistory)
     grievance._action_by = request.user
-    grievance._action_remarks = f"Resolved by {'Campus Admin' if request.user.role == 'CAMPUS_ADMIN' else 'the submitter'}.{note_text}"
+    role_label = 'Campus Admin' if is_admin else ('HOD' if is_hod else 'the submitter')
+    grievance._action_remarks = f"Resolved by {role_label}.{note_text}"
     grievance.current_status = Grievance.Status.RESOLVED
     grievance.save(update_fields=['current_status'])
+
+    # Update the associated Request status if this was an escalation resolved by Campus Admin
+    if is_admin:
+        Request.objects.filter(
+            grievance=grievance,
+            request_type=Request.RequestType.ESCALATION,
+            status=Request.RequestStatus.PENDING,
+        ).update(
+            status=Request.RequestStatus.RESOLVED,
+            reviewed_by_admin=request.user,
+            admin_remark=user_note or 'Resolved by Campus Admin.',
+            resolved_at=timezone.now(),
+        )
 
     # Notify the submitter about the resolution
     send_resolution_email(grievance)
@@ -704,7 +716,7 @@ def reopen_grievance(request, pk):
     POST /api/grievances/{pk}/reopen/
 
     Allows the original submitter to reopen their grievance when the
-    status is RESPONDED or RESOLVED.  Sets ``is_reopened=True`` and
+    status is IN_PROGRESS or RESOLVED.  Sets ``is_reopened=True`` and
     transitions to REOPENED so it returns to the department HOD queue.
     """
     grievance = get_object_or_404(Grievance, pk=pk)
@@ -713,16 +725,50 @@ def reopen_grievance(request, pk):
         raise PermissionDenied('You can only reopen your own grievance.')
 
     if grievance.current_status not in (
-        Grievance.Status.RESPONDED,
+        Grievance.Status.IN_PROGRESS,
         Grievance.Status.RESOLVED,
+        Grievance.Status.REJECTED,
     ):
         return Response(
-            {'error': 'Grievance must be in RESPONDED or RESOLVED status to reopen.'},
+            {'error': 'Grievance must be in IN_PROGRESS, RESOLVED, or REJECTED status to reopen.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     user_note = request.data.get('content', '').strip() or request.data.get('remarks', '').strip()
     note_text = f" Reason: \"{user_note}\"" if user_note else ""
+
+    previous_status = grievance.current_status
+
+    # Validate uploaded files (max 3, same rules as initial submission)
+    uploaded_files = request.FILES.getlist('uploaded_files')
+    allowed_types = {
+        'application/pdf', 'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/png', 'image/jpeg',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }
+    allowed_extensions = {'.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.xls', '.xlsx'}
+    max_size = 5 * 1024 * 1024  # 5 MB
+
+    if len(uploaded_files) > 3:
+        return Response(
+            {'error': 'You can attach up to 3 files.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    for f in uploaded_files:
+        if f.size > max_size:
+            return Response(
+                {'error': f'File "{f.name}" exceeds the 5 MB limit.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ext = f.name[f.name.rfind('.'):].lower() if '.' in f.name else ''
+        if f.content_type not in allowed_types and ext not in allowed_extensions:
+            return Response(
+                {'error': f'File type is not allowed for "{f.name}". Accepted: PDF, DOC, DOCX, PNG, JPG, XLS, XLSX.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
     # Transition status to REOPENED (signal auto-logs StatusHistory)
     grievance._action_by = request.user
@@ -731,12 +777,48 @@ def reopen_grievance(request, pk):
     grievance.current_status = Grievance.Status.REOPENED
     grievance.save(update_fields=['is_reopened', 'current_status'])
 
-    # Notify Campus Admins about the reopen request
-    send_request_notification_email(
-        grievance,
-        Request.RequestType.REOPEN,
-        user_note,
+    # Create a Request record to store the reopen reason for audit trail
+    Request.objects.create(
+        grievance=grievance,
+        student=request.user,
+        request_type=Request.RequestType.REOPEN,
+        reason=user_note or '',
+        status=Request.RequestStatus.PENDING,
+        original_status=previous_status,
     )
+
+    # Store reopen attachments separately
+    from .models import ReopenAttachment
+    for f in uploaded_files:
+        ReopenAttachment.objects.create(
+            grievance=grievance,
+            file_name=f.name,
+            file_type=f.content_type or 'application/octet-stream',
+            file=f,
+        )
+
+    # Notify the department HOD about the reopen request
+    if grievance.department:
+        hod = grievance.department.users.filter(role='HOD').first()
+        if hod and hod.email:
+            submitter = grievance.user.get_full_name() or grievance.user.username if not grievance.is_anonymous else 'Anonymous'
+            try:
+                send_mail(
+                    f"[GMS] Grievance Reopened — GMS-{grievance.id:04d}: {grievance.title}",
+                    f"Dear {hod.get_full_name() or hod.username},\n\n"
+                    f"A student has reopened a grievance in your department.\n\n"
+                    f"Grievance: GMS-{grievance.id:04d}\n"
+                    f"Title: {grievance.title}\n"
+                    f"Reopened by: {submitter}\n"
+                    f"Reason: {user_note or 'No reason provided'}\n\n"
+                    f"Please log in to respond.\n\n"
+                    f"Regards,\nGrievance Management System",
+                    settings.DEFAULT_FROM_EMAIL,
+                    [hod.email],
+                    fail_silently=False,
+                )
+            except Exception as exc:
+                logger.error('Failed to send reopen notification for GMS-%04d: %s', grievance.id, exc)
 
     detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
     return Response(detail, status=status.HTTP_200_OK)
@@ -748,21 +830,21 @@ def close_grievance(request, pk):
     """
     POST /api/grievances/{pk}/close/
 
-    Allows the submitter or a Campus Admin to close a grievance.
+    Allows the submitter or HOD to close a grievance.
     """
     grievance = get_object_or_404(Grievance, pk=pk)
 
     is_submitter = grievance.user == request.user
-    is_admin = request.user.role == 'CAMPUS_ADMIN'
+    is_hod = request.user.role == 'HOD'
 
-    if not (is_submitter or is_admin):
-        raise PermissionDenied('Only the submitter or Campus Admin can close this grievance.')
+    if not (is_submitter or is_hod):
+        raise PermissionDenied('Only the submitter or HOD can close this grievance.')
 
     user_note = request.data.get('content', '').strip() or request.data.get('remarks', '').strip()
     note_text = f" Reason: \"{user_note}\"" if user_note else ""
 
     grievance._action_by = request.user
-    grievance._action_remarks = f"Grievance closed by {'Campus Admin' if is_admin else 'submitter'}.{note_text}"
+    grievance._action_remarks = f"Grievance closed by {'HOD' if is_hod else 'submitter'}.{note_text}"
     grievance.current_status = Grievance.Status.CLOSED
     grievance.save(update_fields=['current_status'])
 
@@ -910,7 +992,7 @@ class DepartmentDashboardView(generics.GenericAPIView):
 
         grievances_qs = Grievance.objects.filter(
             department=dept,
-        ).exclude(current_status=Grievance.Status.SPAM).select_related(
+        ).select_related(
             'category', 'department', 'user',
         ).order_by('-created_at')
 
@@ -919,7 +1001,7 @@ class DepartmentDashboardView(generics.GenericAPIView):
             current_status__in=(
                 Grievance.Status.SUBMITTED,
                 Grievance.Status.UNDER_REVIEW,
-                Grievance.Status.RESPONDED,
+                Grievance.Status.IN_PROGRESS,
                 Grievance.Status.REOPENED,
             ),
         ).count()
@@ -970,7 +1052,6 @@ class AdminDashboardView(generics.GenericAPIView):
         qs = Grievance.objects.all()
 
         total = qs.count()
-        spam_count = qs.filter(current_status=Grievance.Status.SPAM).count()
         closed_resolved_count = qs.filter(
             current_status__in=[Grievance.Status.RESOLVED, Grievance.Status.CLOSED]
         ).count()
@@ -981,7 +1062,6 @@ class AdminDashboardView(generics.GenericAPIView):
         breakdown = {
             'REOPEN': pending_requests_qs.filter(request_type=Request.RequestType.REOPEN).count(),
             'REJECTION_APPEAL': pending_requests_qs.filter(request_type=Request.RequestType.REJECTION_APPEAL).count(),
-            'SPAM_APPEAL': pending_requests_qs.filter(request_type=Request.RequestType.SPAM_APPEAL).count(),
             'ESCALATION': pending_requests_qs.filter(request_type=Request.RequestType.ESCALATION).count(),
         }
 
@@ -1018,11 +1098,9 @@ class AdminDashboardView(generics.GenericAPIView):
                 'total': total,
                 'pending_requests': pending_requests_count,
                 'pending_requests_breakdown': breakdown,
-                'spam_review': spam_count,
                 'closed_resolved': closed_resolved_count,
                 'status_breakdown': status_counts,
                 'escalated': status_counts.get(Grievance.Status.ESCALATED, 0),
-                'spam': spam_count,
                 'monthly_trend': monthly_trend,
             },
             'recent': recent_data,
@@ -1076,14 +1154,9 @@ def create_grievance_request(request, pk):
             {'error': 'Rejection appeals can only be submitted for REJECTED grievances.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    elif request_type == Request.RequestType.SPAM_APPEAL and grievance.current_status != Grievance.Status.SPAM:
+    elif request_type == Request.RequestType.REOPEN and grievance.current_status not in (Grievance.Status.RESOLVED, Grievance.Status.IN_PROGRESS):
         return Response(
-            {'error': 'Spam appeals can only be submitted for SPAM grievances.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    elif request_type == Request.RequestType.REOPEN and grievance.current_status not in (Grievance.Status.RESOLVED, Grievance.Status.RESPONDED):
-        return Response(
-            {'error': 'Reopen requests can only be submitted for RESOLVED or RESPONDED grievances.'},
+            {'error': 'Reopen requests can only be submitted for RESOLVED or IN_PROGRESS grievances.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -1111,17 +1184,15 @@ def create_grievance_request(request, pk):
         original_status=grievance.current_status,
     )
 
-    # Transition the grievance to APPEAL_PENDING so the status reflects
-    # that a student appeal/request is awaiting Campus Admin review.
-    # The pre_save signal auto-logs the StatusHistory entry.
+    # Status remains unchanged — the request is pending admin review.
     type_display = req_obj.get_request_type_display()
     grievance._action_by = request.user
     grievance._action_remarks = (
-        f"Submitted {type_display} — status set to Appeal Pending. "
+        f"Submitted {type_display} — pending Campus Admin review. "
         f"Reason: {reason[:200]}"
     )
-    grievance.current_status = Grievance.Status.APPEAL_PENDING
-    grievance.save(update_fields=['current_status'])
+    # No status change — grievance stays in its current status
+    # while the admin reviews the request.
 
     # Notify Campus Admins about the student request
     send_request_notification_email(grievance, request_type, reason)
@@ -1236,17 +1307,6 @@ def admin_forward_request(request, pk):
         grievance.current_status = Grievance.Status.SUBMITTED
         grievance.department = target_dept
         grievance.is_reopened = True
-    elif req_obj.request_type == Request.RequestType.SPAM_APPEAL:
-        grievance.current_status = Grievance.Status.SUBMITTED
-        grievance.department = target_dept
-        # Clear spam flag in AI analysis if present
-        try:
-            ai = grievance.ai_analysis
-            ai.spam_prediction = False
-            ai.classification_reason = f"Restored via Spam Appeal by Campus Admin ({request.user.username})."
-            ai.save(update_fields=['spam_prediction', 'classification_reason'])
-        except AIAnalysis.DoesNotExist:
-            pass
     elif req_obj.request_type == Request.RequestType.ESCALATION:
         grievance.current_status = Grievance.Status.SUBMITTED
         grievance.department = target_dept
@@ -1269,7 +1329,7 @@ def admin_reject_request(request, pk):
 
     Campus Admin action to reject a student request.
     Request status transitions to REJECTED.
-    If the grievance was moved to APPEAL_PENDING by the request (or ESCALATED
+    If the grievance was moved by the request (or ESCALATED
     by the system), it is restored to its pre-request status so the workflow
     continues from a meaningful state.
     """
@@ -1292,7 +1352,7 @@ def admin_reject_request(request, pk):
     req_obj.resolved_at = timezone.now()
     req_obj.save()
 
-    # If the grievance was moved to APPEAL_PENDING by this request, restore
+    # If the grievance was moved by this request, restore
     # it to its pre-request status (the pre_save signal logs the transition).
     # Rejected escalations move the grievance to REJECTED (per the workflow
     # map, ESCALATED -> REJECTED) and clear the escalation fields, so the
@@ -1314,10 +1374,7 @@ def admin_reject_request(request, pk):
         grievance.save(update_fields=[
             'current_status', 'escalation_level', 'escalated_to', 'updated_at',
         ])
-    elif (
-        grievance.current_status == Grievance.Status.APPEAL_PENDING
-        and req_obj.original_status
-    ):
+    elif req_obj.original_status:
         grievance._action_by = request.user
         grievance._action_remarks = (
             f"Campus Admin rejected {req_obj.get_request_type_display()} — "
@@ -1405,69 +1462,6 @@ def admin_resolve_request(request, pk):
     ])
 
     send_resolution_email(grievance)
-
-    serializer = RequestSerializer(req_obj, context={'request': request})
-    return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-@api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated, IsCampusAdmin])
-def admin_close_request(request, pk):
-    """
-    POST /api/admin/requests/{pk}/close/
-
-    Campus Admin action to close an escalated grievance without a resolution.
-
-    Request status transitions to CLOSED. The underlying grievance is
-    closed (ESCALATED -> CLOSED) and its escalation fields are cleared.
-    """
-    req_obj = get_object_or_404(
-        Request.objects.select_related('grievance'),
-        pk=pk,
-    )
-
-    if req_obj.status != Request.RequestStatus.PENDING:
-        return Response(
-            {'error': f'Request has already been processed (Current status: {req_obj.status}).'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if req_obj.request_type != Request.RequestType.ESCALATION:
-        return Response(
-            {'error': 'Only escalation requests can be closed from this endpoint.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    admin_remark = request.data.get('admin_remark', '').strip()
-
-    grievance = req_obj.grievance
-    if grievance.current_status != Grievance.Status.ESCALATED:
-        return Response(
-            {'error': 'Grievance must be in ESCALATED status.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    admin_name = request.user.get_full_name() or request.user.username
-
-    # Update Request record
-    req_obj.status = Request.RequestStatus.CLOSED
-    req_obj.reviewed_by_admin = request.user
-    req_obj.admin_remark = admin_remark
-    req_obj.resolved_at = timezone.now()
-    req_obj.save()
-
-    # Close the escalated grievance (signal auto-logs StatusHistory)
-    grievance._action_by = request.user
-    grievance._action_remarks = (
-        f"Escalated grievance closed by Campus Admin {admin_name}."
-        f"{f' Remarks: {admin_remark}' if admin_remark else ''}"
-    )
-    grievance.current_status = Grievance.Status.CLOSED
-    grievance.escalation_level = 0
-    grievance.escalated_to = None
-    grievance.save(update_fields=[
-        'current_status', 'escalation_level', 'escalated_to', 'updated_at',
-    ])
 
     serializer = RequestSerializer(req_obj, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../services/api';
 import FileUpload from '../components/FileUpload';
 
-const initialForm = { title: '', description: '', category: '', department: '', is_anonymous: false };
+const initialForm = { title: '', description: '', category: '', department: '', is_anonymous: false, is_sensitive: false };
 
 const getErrorMessage = (error) => {
   const data = error.response?.data;
@@ -35,6 +35,10 @@ const SubmitGrievance = () => {
 
   const updateField = (event) => {
     const { name, value, type, checked } = event.target;
+    if (type === 'radio') {
+      setForm((current) => ({ ...current, [name]: value === 'true' }));
+      return;
+    }
     setForm((current) => ({ ...current, [name]: type === 'checkbox' ? checked : value }));
   };
 
@@ -75,6 +79,19 @@ const SubmitGrievance = () => {
             <div className="form-group"><label htmlFor="department">Department</label><select id="department" name="department" value={form.department} onChange={updateField} required disabled={loadingOptions}><option value="">Select a department</option>{options.departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></div>
           </div>
           <label className="anonymous-toggle"><input type="checkbox" name="is_anonymous" checked={form.is_anonymous} onChange={updateField} /><span><strong>Submit anonymously</strong><small>Your identity remains available only for internal audit purposes. You will receive a secret tracking code once—save it securely.</small></span></label>
+          <div className="form-group">
+            <label>Is this grievance sensitive?</label>
+            <div className="sensitive-radio-row">
+              <label className="sensitive-radio-label">
+                <input type="radio" name="is_sensitive" value="false" checked={form.is_sensitive === false} onChange={updateField} />
+                <span>No</span>
+              </label>
+              <label className="sensitive-radio-label">
+                <input type="radio" name="is_sensitive" value="true" checked={form.is_sensitive === true} onChange={updateField} />
+                <span>Yes</span>
+              </label>
+            </div>
+          </div>
           <div className="form-group"><label>Attachments <small>(optional)</small></label><FileUpload files={files} onChange={setFiles} disabled={submitting} /></div>
           <button className="btn btn-primary submit-grievance-btn" type="submit" disabled={submitting || loadingOptions}>{submitting ? 'Submitting…' : 'Submit grievance'}</button>
         </form>

@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(date)) : '—';
 
-const FILTER_STATUSES = ['SUBMITTED', 'SPAM', 'UNDER_REVIEW', 'REOPENED', 'ESCALATED', 'RESOLVED', 'REJECTED', 'CLOSED'];
+const FILTER_STATUSES = ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED', 'ESCALATED', 'RESOLVED', 'REJECTED', 'CLOSED'];
 
 const DepartmentDashboard = () => {
   const { user } = useAuth();
@@ -63,17 +63,15 @@ const DepartmentDashboard = () => {
   // Status metrics calculation
   const statusCounts = dashboardCounts?.status_breakdown || {};
   const statusCount = (status) => dashboardCounts ? (statusCounts[status] || 0) : grievances.filter(g => g.current_status === status).length;
-  const pendingCount = statusCount('SUBMITTED') + statusCount('UNDER_REVIEW') + statusCount('REOPENED');
-  const respondedCount = statusCount('RESPONDED');
+  const pendingCount = statusCount('SUBMITTED') + statusCount('UNDER_REVIEW') + statusCount('IN_PROGRESS') + statusCount('REOPENED');
   const escalatedCount = statusCount('ESCALATED');
   const resolvedCount = statusCount('RESOLVED') + statusCount('CLOSED');
   const rejectedCount = statusCount('REJECTED');
   const totalCount = dashboardCounts?.total ?? grievances.length;
-  const otherCount = Math.max(0, totalCount - pendingCount - respondedCount - escalatedCount - resolvedCount - rejectedCount);
+  const otherCount = Math.max(0, totalCount - pendingCount - escalatedCount - resolvedCount - rejectedCount);
   const chartTotal = totalCount || 1;
   const distribution = [
     { key: 'ACTION_REQUIRED', label: 'Action required', value: pendingCount, color: '#f59e0b' },
-    { key: 'RESPONDED', label: 'Responded', value: respondedCount, color: '#38bdf8' },
     { key: 'ESCALATED', label: 'Escalated', value: escalatedCount, color: '#f97316' },
     { key: 'RESOLVED', label: 'Resolved', value: resolvedCount, color: '#10b981' },
     { key: 'REJECTED', label: 'Rejected', value: rejectedCount, color: '#f43f5e' },
@@ -88,9 +86,8 @@ const DepartmentDashboard = () => {
 
   // Tab filtering logic
   const filteredGrievances = grievances.filter(g => {
-    if (activeTab === 'ACTION_REQUIRED') return ['SUBMITTED', 'UNDER_REVIEW', 'REOPENED'].includes(g.current_status);
-    if (activeTab === 'UNDER_REVIEW') return ['SUBMITTED', 'UNDER_REVIEW'].includes(g.current_status);
-    if (activeTab === 'RESPONDED') return g.current_status === 'RESPONDED';
+    if (activeTab === 'ACTION_REQUIRED') return ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'].includes(g.current_status);
+    if (activeTab === 'UNDER_REVIEW') return ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS'].includes(g.current_status);
     if (activeTab === 'ESCALATED') return g.current_status === 'ESCALATED';
     if (activeTab === 'RESOLVED') return ['RESOLVED', 'CLOSED'].includes(g.current_status);
     if (activeTab === 'REJECTED') return g.current_status === 'REJECTED';
@@ -131,10 +128,6 @@ const DepartmentDashboard = () => {
             <span>Action Required</span>
             <strong>{pendingCount}</strong>
           </div>
-          <div className="hod-stat-card">
-            <span>Responded</span>
-            <strong>{respondedCount}</strong>
-          </div>
           <div className="hod-stat-card escalated">
             <span>Escalated</span>
             <strong>{escalatedCount}</strong>
@@ -162,12 +155,6 @@ const DepartmentDashboard = () => {
             onClick={() => setActiveTab('ALL')}
           >
             All Assigned ({grievances.length})
-          </button>
-          <button
-            className={`hod-tab-btn ${activeTab === 'RESPONDED' ? 'active' : ''}`}
-            onClick={() => setActiveTab('RESPONDED')}
-          >
-            Responded ({respondedCount})
           </button>
           <button
             className={`hod-tab-btn ${activeTab === 'ESCALATED' ? 'active' : ''}`}

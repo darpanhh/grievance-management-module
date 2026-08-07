@@ -21,20 +21,6 @@ urlpatterns = [
     path('grievances/', views.GrievanceListCreateView.as_view(), name='grievance_list_create'),
     path('grievances/<int:pk>/', views.GrievanceDetailView.as_view(), name='grievance_detail'),
 
-    # ------------------------------------------------------------------
-    # Phase 4 — AI Spam Filtering
-    # ------------------------------------------------------------------
-    path('admin/spam-queue/', views.SpamQueueView.as_view(), name='spam_queue'),
-    path(
-        'admin/spam-queue/<int:pk>/reinstate/',
-        views.reinstate_spam,
-        name='reinstate_spam',
-    ),
-    path(
-        'grievances/<int:pk>/appeal-spam/',
-        views.appeal_spam,
-        name='appeal_spam',
-    ),
 
     # ------------------------------------------------------------------
     # Phase 6 — Response & Escalation Workflow
@@ -58,6 +44,11 @@ urlpatterns = [
         'grievances/<int:pk>/close/',
         views.close_grievance,
         name='close_grievance',
+    ),
+    path(
+        'grievances/<int:pk>/hod-escalate/',
+        views.hod_escalate_grievance,
+        name='hod_escalate_grievance',
     ),
     path(
         'admin/escalated/<int:pk>/resolve/',
@@ -116,10 +107,5 @@ urlpatterns = [
         'admin/requests/<int:pk>/resolve/',
         views.admin_resolve_request,
         name='admin_resolve_request',
-    ),
-    path(
-        'admin/requests/<int:pk>/close/',
-        views.admin_close_request,
-        name='admin_close_request',
     ),
 ]

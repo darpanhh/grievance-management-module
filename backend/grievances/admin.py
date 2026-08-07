@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Grievance, AIAnalysis, Response, StatusHistory, Attachment, Request
+from .models import Category, Grievance, AIAnalysis, Response, StatusHistory, Attachment, ReopenAttachment, Request
 
 class AIAnalysisInline(admin.StackedInline):
     model = AIAnalysis

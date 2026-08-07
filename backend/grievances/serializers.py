@@ -7,6 +7,7 @@ from .models import (
     Category,
     Department,
     Grievance,
+    ReopenAttachment,
     Request,
     Response,
     StatusHistory,
@@ -40,6 +41,15 @@ class AttachmentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'file_name', 'file_type', 'uploaded_at']
 
 
+class ReopenAttachmentSerializer(serializers.ModelSerializer):
+    """Serializer for ReopenAttachment model — documents uploaded with reopen requests."""
+
+    class Meta:
+        model = ReopenAttachment
+        fields = ['id', 'file_name', 'file_type', 'file', 'uploaded_at']
+        read_only_fields = ['id', 'file_name', 'file_type', 'uploaded_at']
+
+
 class StatusHistorySerializer(serializers.ModelSerializer):
     """Read-only serializer for StatusHistory entries."""
 
@@ -48,6 +58,9 @@ class StatusHistorySerializer(serializers.ModelSerializer):
     def get_action_by_name(self, obj):
         if obj.action_by is None:
             return None
+        # Hide student/staff name for anonymous grievances, but always show HOD/Admin names
+        if obj.grievance.is_anonymous and obj.action_by.role in ('STUDENT', 'STAFF'):
+            return 'Anonymous'
         full_name = obj.action_by.get_full_name()
         if full_name:
             return full_name
@@ -65,16 +78,19 @@ class StatusHistorySerializer(serializers.ModelSerializer):
 
 
 class ResponseSerializer(serializers.ModelSerializer):
-    """Serializer for official HOD responses on a grievance."""
+    """Serializer for official HOD/Campus Admin responses on a grievance."""
 
     responder_name = serializers.CharField(
         source='responder.get_full_name', read_only=True
     )
+    responder_role = serializers.CharField(
+        source='responder.get_role_display', read_only=True
+    )
 
     class Meta:
         model = Response
-        fields = ['id', 'responder', 'responder_name', 'content', 'created_at']
-        read_only_fields = ['id', 'responder', 'responder_name', 'created_at']
+        fields = ['id', 'responder', 'responder_name', 'responder_role', 'content', 'created_at']
+        read_only_fields = ['id', 'responder', 'responder_name', 'responder_role', 'created_at']
 
 
 class AIAnalysisSerializer(serializers.ModelSerializer):
@@ -104,7 +120,8 @@ class GrievanceListSerializer(serializers.ModelSerializer):
         model = Grievance
         fields = [
             'id', 'title', 'current_status', 'category', 'category_name',
-            'department', 'department_name', 'is_anonymous', 'is_reopened',
+            'department', 'department_name', 'is_anonymous', 'is_sensitive',
+            'is_reopened',
             'escalation_level', 'escalated_to_name',
             'submitter_name', 'attachment_count', 'days_since_update',
             'created_at', 'updated_at',
@@ -147,7 +164,7 @@ class GrievanceCreateSerializer(serializers.ModelSerializer):
         model = Grievance
         fields = [
             'title', 'description', 'category', 'department',
-            'is_anonymous', 'uploaded_files',
+            'is_anonymous', 'is_sensitive', 'uploaded_files',
         ]
         extra_kwargs = {
             'department': {'required': False, 'allow_null': True},
@@ -210,6 +227,7 @@ class GrievanceCreateSerializer(serializers.ModelSerializer):
             category=validated_data.get('category'),
             department=validated_data.get('department'),
             is_anonymous=validated_data.get('is_anonymous', False),
+            is_sensitive=validated_data.get('is_sensitive', False),
             current_status=Grievance.Status.SUBMITTED,
         )
 
@@ -250,7 +268,9 @@ class RequestSerializer(serializers.ModelSerializer):
     """
     grievance_title = serializers.CharField(source='grievance.title', read_only=True)
     grievance_created_at = serializers.DateTimeField(source='grievance.created_at', read_only=True, allow_null=True)
+    grievance_current_status = serializers.CharField(source='grievance.current_status', read_only=True)
     student_name = serializers.SerializerMethodField()
+    hod_name = serializers.SerializerMethodField()
     reviewed_by_admin_name = serializers.CharField(source='reviewed_by_admin.get_full_name', read_only=True, allow_null=True)
     forwarded_department_name = serializers.CharField(source='forwarded_department.name', read_only=True, allow_null=True)
     request_type_display = serializers.CharField(source='get_request_type_display', read_only=True)
@@ -261,7 +281,8 @@ class RequestSerializer(serializers.ModelSerializer):
         model = Request
         fields = [
             'id', 'grievance', 'grievance_title', 'grievance_created_at',
-            'student', 'student_name',
+            'grievance_current_status',
+            'student', 'student_name', 'hod_name',
             'request_type', 'request_type_display', 'reason', 'attachment',
             'status', 'status_display', 'original_status', 'original_status_display',
             'created_at', 'reviewed_by_admin',
@@ -282,6 +303,17 @@ class RequestSerializer(serializers.ModelSerializer):
             return obj.grievance.user.get_full_name() or obj.grievance.user.username
         return "System Auto-Escalation"
 
+    def get_hod_name(self, obj):
+        if obj.request_type != 'ESCALATION':
+            return None
+        reason = obj.reason or ''
+        if reason.startswith('HOD '):
+            # Extract name from "HOD <name> escalated: <reason>"
+            parts = reason[4:].split(' escalated:')
+            if parts:
+                return parts[0].strip()
+        return None
+
 
 class GrievanceDetailSerializer(serializers.ModelSerializer):
     """
@@ -301,6 +333,7 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
     status_history = StatusHistorySerializer(many=True, read_only=True)
     ai_analysis = AIAnalysisSerializer(read_only=True, allow_null=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
+    reopen_attachments = ReopenAttachmentSerializer(many=True, read_only=True)
     requests = RequestSerializer(many=True, read_only=True)
 
     class Meta:
@@ -308,10 +341,10 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'current_status',
             'category', 'category_name', 'department', 'department_name',
-            'is_anonymous', 'is_reopened', 'escalation_level',
+            'is_anonymous', 'is_sensitive', 'is_reopened', 'escalation_level',
             'escalated_to_name', 'submitter', 'submitter_name',
             'responses', 'status_history', 'ai_analysis', 'attachments',
-            'requests', 'created_at', 'updated_at',
+            'reopen_attachments', 'requests', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
 

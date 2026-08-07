@@ -1,23 +1,32 @@
 import { useState } from 'react';
 import api from '../services/api';
+import FileUpload from './FileUpload';
 
-const REQUEST_TITLES = {
-  REJECTION_APPEAL: 'Appeal Rejected Grievance',
-  SPAM_APPEAL: 'Appeal Spam Classification',
-  REOPEN: 'Request Grievance Reopening',
-};
-
-const REQUEST_DESCRIPTIONS = {
-  REJECTION_APPEAL: 'Please provide a clear reason why the rejection should be reconsidered by the Campus Admin.',
-  SPAM_APPEAL: 'Explain why your grievance is genuine and should not be classified as spam.',
-  REOPEN: 'Explain why the resolution was unsatisfactory or why this grievance requires further department review.',
+const REQUEST_META = {
+  REJECTION_APPEAL: {
+    title: 'Appeal Rejected Grievance',
+    tag: 'Rejection Appeal',
+    description: 'Provide a clear reason why the rejection should be reconsidered.',
+  },
+  SPAM_APPEAL: {
+    title: 'Appeal Spam Classification',
+    tag: 'Spam Appeal',
+    description: 'Explain why your grievance is genuine and not spam.',
+  },
+  REOPEN: {
+    title: 'Reopen Grievance',
+    tag: 'Reopen Request',
+    description: 'Explain why the resolution was unsatisfactory. The grievance will be sent back to the assigned department.',
+  },
 };
 
 const RequestModal = ({ grievance, requestType, onClose, onSuccess }) => {
   const [reason, setReason] = useState('');
-  const [attachment, setAttachment] = useState(null);
+  const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const meta = REQUEST_META[requestType] || REQUEST_META.REOPEN;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -31,17 +40,28 @@ const RequestModal = ({ grievance, requestType, onClose, onSuccess }) => {
 
     try {
       const formData = new FormData();
-      formData.append('request_type', requestType);
-      formData.append('reason', reason.trim());
-      if (attachment) {
-        formData.append('attachment', attachment);
+      formData.append('content', reason.trim());
+
+      if (requestType === 'REOPEN') {
+        files.forEach((file) => formData.append('uploaded_files', file));
+        await api.post(`grievances/${grievance.id}/reopen/`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        formData.append('request_type', requestType);
+        formData.append('reason', reason.trim());
+        if (files.length > 0) {
+          formData.append('attachment', files[0]);
+        }
+        await api.post(`grievances/${grievance.id}/request/`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
       }
 
-      await api.post(`grievances/${grievance.id}/request/`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      onSuccess(`Your ${REQUEST_TITLES[requestType] || 'request'} has been submitted and is pending Campus Admin review.`);
+      const successMsg = requestType === 'REOPEN'
+        ? 'Your grievance has been reopened and forwarded to the assigned department.'
+        : `Your ${meta.title} has been submitted and is pending Campus Admin review.`;
+      onSuccess(successMsg);
       onClose();
     } catch (err) {
       const respData = err.response?.data;
@@ -59,41 +79,37 @@ const RequestModal = ({ grievance, requestType, onClose, onSuccess }) => {
       <form className={`workflow-modal request-modal request-modal-${requestType.toLowerCase()}`} onSubmit={handleSubmit}>
         <div className="modal-header">
           <div>
-            <span className="modal-tag">Student Request &amp; Appeal</span>
-            <h2>{REQUEST_TITLES[requestType] || 'Submit Request'}</h2>
+            <span className="modal-tag">{meta.tag}</span>
+            <h2>{meta.title}</h2>
           </div>
           <button type="button" className="close-btn" onClick={onClose} aria-label="Close modal">×</button>
         </div>
 
         <div className="grievance-context-snippet">
           <strong>GMS-{String(grievance.id).padStart(4, '0')}: {grievance.title}</strong>
-          <p>{REQUEST_DESCRIPTIONS[requestType]}</p>
+          <p>{meta.description}</p>
         </div>
 
         {error && <div className="workflow-toast error">{error}</div>}
 
         <div className="form-group">
           <label htmlFor="request-reason">
-            Reason / Justification <span className="required-star">*</span>
+            Reason <span className="required-star">*</span>
           </label>
           <textarea
             id="request-reason"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Write your detailed justification here (mandatory)..."
-            rows="5"
+            placeholder="Write your justification here..."
+            rows="4"
             required
             autoFocus
           />
         </div>
 
         <div className="form-group">
-          <label htmlFor="request-attachment">Supporting Document (Optional)</label>
-          <div className="request-file-picker">
-            <input id="request-attachment" type="file" onChange={(e) => setAttachment(e.target.files[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
-            <label htmlFor="request-attachment"><span className="request-file-icon" aria-hidden="true">↑</span><span>{attachment ? attachment.name : 'Choose a supporting document'}</span><b>{attachment ? 'Change file' : 'Browse files'}</b></label>
-          </div>
-          <small className="form-help">Accepted formats: PDF, DOC, DOCX, PNG, JPG (Max 5MB)</small>
+          <label>Supporting Documents <small>(optional, max 3)</small></label>
+          <FileUpload files={files} onChange={setFiles} disabled={submitting} />
         </div>
 
         <div className="modal-actions">
@@ -101,7 +117,7 @@ const RequestModal = ({ grievance, requestType, onClose, onSuccess }) => {
             Cancel
           </button>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Submitting Request...' : 'Submit to Campus Admin'}
+            {submitting ? 'Submitting...' : requestType === 'REOPEN' ? 'Reopen & Send to Department' : 'Submit to Campus Admin'}
           </button>
         </div>
       </form>
