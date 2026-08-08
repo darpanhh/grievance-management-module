@@ -58,14 +58,17 @@ class StatusHistorySerializer(serializers.ModelSerializer):
     def get_action_by_name(self, obj):
         if obj.action_by is None:
             return None
-        # Hide student/staff name for anonymous grievances, but always show HOD/Admin names
+        # Never expose HOD / Campus Admin personal names — show the role only
+        if obj.action_by.role == 'HOD':
+            return 'HOD'
+        if obj.action_by.role == 'CAMPUS_ADMIN':
+            return 'Campus Admin'
+        # Hide student/staff name for anonymous grievances
         if obj.grievance.is_anonymous and obj.action_by.role in ('STUDENT', 'STAFF'):
             return 'Anonymous'
         full_name = obj.action_by.get_full_name()
         if full_name:
             return full_name
-        if obj.action_by.role == 'CAMPUS_ADMIN':
-            return 'Campus Administrator'
         return obj.action_by.username
 
     class Meta:

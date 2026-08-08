@@ -18,6 +18,8 @@ const SearchFilter = ({
   onDateToChange,
   ordering,
   onOrderingChange,
+  showStatus = true,
+  showCategory = true,
 }) => {
   const [query, setQuery] = useState(value || '');
   const [categories, setCategories] = useState([]);
@@ -32,7 +34,7 @@ const SearchFilter = ({
   }, []);
 
   return (
-    <div className="search-filter-wrapper">
+    <div className={`search-filter-wrapper${!showStatus && !showCategory ? ' compact' : ''}`}>
       <div className="search-input-group">
         <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="11" cy="11" r="8" />
@@ -54,21 +56,25 @@ const SearchFilter = ({
       </div>
 
       <div className="filter-controls-grid">
-        <div className="filter-field">
-          <label className="field-label">Status</label>
-          <select aria-label="Filter by status" className="filter-select" value={status} onChange={(event) => onStatusChange(event.target.value)}>
-            <option value="">All Statuses</option>
-            {statuses.map((item) => <option key={item} value={item}>{label(item)}</option>)}
-          </select>
-        </div>
+        {showStatus && (
+          <div className="filter-field">
+            <label className="field-label">Status</label>
+            <select aria-label="Filter by status" className="filter-select" value={status} onChange={(event) => onStatusChange(event.target.value)}>
+              <option value="">All Statuses</option>
+              {statuses.map((item) => <option key={item} value={item}>{label(item)}</option>)}
+            </select>
+          </div>
+        )}
 
-        <div className="filter-field">
-          <label className="field-label">Category</label>
-          <select aria-label="Filter by category" className="filter-select" value={category} onChange={(event) => onCategoryChange(event.target.value)}>
-            <option value="">All Categories</option>
-            {categories.map((item) => <option key={item.id} value={String(item.id)}>{item.name}</option>)}
-          </select>
-        </div>
+        {showCategory && (
+          <div className="filter-field">
+            <label className="field-label">Category</label>
+            <select aria-label="Filter by category" className="filter-select" value={category} onChange={(event) => onCategoryChange(event.target.value)}>
+              <option value="">All Categories</option>
+              {categories.map((item) => <option key={item.id} value={String(item.id)}>{item.name}</option>)}
+            </select>
+          </div>
+        )}
 
         <div className="filter-field">
           <label className="field-label">From Date</label>

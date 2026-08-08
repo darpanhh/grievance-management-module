@@ -9,10 +9,10 @@ const ShieldIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1
 const CheckIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>;
 
 const roleHome = {
-  STUDENT: { eyebrow: 'Student workspace', title: 'Your concerns deserve a clear path forward.', description: 'Create grievances, follow department responses, and keep every update in one place.', dashboard: '/dashboard/student', dashboardLabel: 'Open my dashboard', primary: 'Submit a grievance', primaryTo: '/grievances/new', accent: 'student' },
-  STAFF: { eyebrow: 'Staff workspace', title: 'A simple, private way to raise campus issues.', description: 'Submit and follow your grievances from one personal dashboard, with clear status updates along the way.', dashboard: '/dashboard/student', dashboardLabel: 'Open my dashboard', primary: 'Submit a grievance', primaryTo: '/grievances/new', accent: 'student' },
-  HOD: { eyebrow: 'Department workspace', title: 'Keep your department’s resolutions moving.', description: 'Review grievances assigned to your department and see which concerns need attention first.', dashboard: '/dashboard/department', dashboardLabel: 'Open department dashboard', primary: 'Review department grievances', primaryTo: '/dashboard/department', accent: 'department' },
-  CAMPUS_ADMIN: { eyebrow: 'Campus administration', title: 'See the whole grievance system at a glance.', description: 'Monitor campus-wide activity, escalations, resolution progress, and spam flags from one overview.', dashboard: '/dashboard/admin', dashboardLabel: 'Open system overview', primary: 'View system dashboard', primaryTo: '/dashboard/admin', accent: 'admin' },
+  STUDENT: { title: 'Your concerns deserve a clear path forward.', description: 'Create grievances, follow department responses, and keep every update in one place.', dashboard: '/dashboard/student', dashboardLabel: 'Open my dashboard', primary: 'Submit a grievance', primaryTo: '/grievances/new' },
+  STAFF: { title: 'A simple, private way to raise campus issues.', description: 'Submit and follow your grievances from one personal dashboard, with clear status updates along the way.', dashboard: '/dashboard/student', dashboardLabel: 'Open my dashboard', primary: 'Submit a grievance', primaryTo: '/grievances/new' },
+  HOD: { title: 'Keep your department’s resolutions moving.', description: 'Review grievances assigned to your department and see which concerns need attention first.', dashboard: '/dashboard/department', dashboardLabel: 'Open department dashboard', primary: 'Review department grievances', primaryTo: '/dashboard/department' },
+  CAMPUS_ADMIN: { title: 'See the whole grievance system at a glance.', description: 'Monitor campus-wide activity, escalations, resolution progress, and spam flags from one overview.', dashboard: '/dashboard/admin', dashboardLabel: 'Open system overview', primary: 'View system dashboard', primaryTo: '/dashboard/admin' },
 };
 
 const Landing = () => {
@@ -25,9 +25,9 @@ const Landing = () => {
   if (userRole === 'CAMPUS_ADMIN') return <Navigate to="/admin/grievances" replace />;
 
   if (user) {
-    return <div className={`role-home role-home-${workspace.accent}`}>
-      <section className="role-home-hero"><div className="role-home-container"><div className="role-home-copy"><div className="hero-badge">{workspace.eyebrow}</div><p className="role-greeting">Welcome back, {displayName}</p><h1>{workspace.title}</h1><p>{workspace.description}</p><div className="hero-cta-group"><Link to={workspace.primaryTo} className="btn btn-hero-primary">{workspace.primary}<span className="btn-arrow">→</span></Link><Link to={workspace.dashboard} className="btn btn-hero-secondary">{workspace.dashboardLabel}</Link></div></div><aside className="role-home-panel"><img src={logo} alt="IOE Pulchowk Campus Logo" /><span>Your workspace</span><strong>{workspace.eyebrow}</strong><p>Secure access based on your campus role.</p><div className="role-home-panel-line" /><small>IOE Pulchowk Campus · Grievance Portal</small></aside></div></section>
-      <section className="role-home-steps"><div><span>01</span><h2>{userRole === 'HOD' ? 'Review assigned issues' : userRole === 'CAMPUS_ADMIN' ? 'Monitor campus activity' : 'Share your concern'}</h2><p>{userRole === 'HOD' ? 'See department grievances in one focused queue.' : userRole === 'CAMPUS_ADMIN' ? 'View system-wide volume and priority signals.' : 'Submit a clear description with optional evidence.'}</p></div><div><span>02</span><h2>{userRole === 'HOD' ? 'Follow progress' : userRole === 'CAMPUS_ADMIN' ? 'Identify what needs action' : 'Track each update'}</h2><p>{userRole === 'HOD' ? 'Use filters and status to stay organised.' : userRole === 'CAMPUS_ADMIN' ? 'Keep an eye on escalations and spam flags.' : 'See department responses and your status history.'}</p></div><div><span>03</span><h2>{userRole === 'HOD' ? 'Resolve with clarity' : userRole === 'CAMPUS_ADMIN' ? 'Support resolution' : 'Stay informed'}</h2><p>{userRole === 'HOD' ? 'Keep the resolution journey transparent.' : userRole === 'CAMPUS_ADMIN' ? 'Use the overview to keep the workflow healthy.' : 'Your dashboard keeps the full record together.'}</p></div></section>
+    return <div className="role-home">
+      <section className="role-home-hero"><div className="role-home-container"><div className="role-home-copy"><p className="role-greeting">Welcome back, {displayName}</p><h1>{workspace.title}</h1><p>{workspace.description}</p><div className="hero-cta-group"><Link to={workspace.primaryTo} className="btn btn-hero-primary">{workspace.primary}<span className="btn-arrow">→</span></Link><Link to={workspace.dashboard} className="btn btn-hero-secondary">{workspace.dashboardLabel}</Link></div></div></div></section>
+      <section className="role-home-steps"><div><span>01</span><h2>{userRole === 'HOD' ? 'Review assigned issues' : userRole === 'CAMPUS_ADMIN' ? 'Monitor campus activity' : 'Share your concern'}</h2><p>{userRole === 'HOD' ? 'See department grievances in one focused queue.' : userRole === 'CAMPUS_ADMIN' ? 'View system-wide volume and priority signals.' : 'Submit a clear description with  evidence.'}</p></div><div><span>02</span><h2>{userRole === 'HOD' ? 'Follow progress' : userRole === 'CAMPUS_ADMIN' ? 'Identify what needs action' : 'Track each update'}</h2><p>{userRole === 'HOD' ? 'Use filters and status to stay organised.' : userRole === 'CAMPUS_ADMIN' ? 'Keep an eye on escalations and spam flags.' : 'See department responses and your status history.'}</p></div><div><span>03</span><h2>{userRole === 'HOD' ? 'Resolve with clarity' : userRole === 'CAMPUS_ADMIN' ? 'Support resolution' : 'Stay informed'}</h2><p>{userRole === 'HOD' ? 'Keep the resolution journey transparent.' : userRole === 'CAMPUS_ADMIN' ? 'Use the overview to keep the workflow healthy.' : 'Your dashboard keeps the full record together.'}</p></div></section>
     </div>;
   }
 
@@ -36,10 +36,10 @@ const Landing = () => {
       <div className="hero-orb hero-orb-one" /><div className="hero-orb hero-orb-two" />
       <div className="hero-container">
         <div className="hero-content">
-          <div className="hero-badge">Institute of Engineering · Pulchowk Campus</div>
+          
           <div className="hero-heading-row"><div className="hero-logo-wrapper"><img src={logo} alt="IOE Pulchowk Campus Logo" className="hero-logo" /></div><span className="hero-kicker">YOUR VOICE, HEARD</span></div>
           <h1 className="hero-title">A better path from <span className="gradient-text">concern to change.</span></h1>
-          <p className="hero-description">One trusted place for the Pulchowk community to raise campus concerns, receive meaningful responses, and follow every step forward.</p>
+          <p className="hero-description">One trusted place for the IOE Pulchowk Campus  to raise campus concerns, receive meaningful responses, and follow every step forward.</p>
           <div className="hero-cta-group"><Link to="/register" className="btn btn-hero-primary">Create an account <ArrowIcon /></Link><Link to="/grievances/track" className="btn btn-hero-secondary">Track a grievance</Link><Link to="/login" className="btn btn-hero-outline">Account login</Link></div>
           <div className="hero-trust"><span><CheckIcon /> Private by design</span><span><CheckIcon /> Clear status updates</span></div>
         </div>
@@ -50,8 +50,6 @@ const Landing = () => {
             <div className="portal-progress"><span /><span /><span /></div>
             <div className="portal-card-bottom"><span><BellIcon /> Update received</span><strong>In review</strong></div>
           </div>
-          <div className="floating-note note-one"><span className="mini-icon"><RouteIcon /></span><div><b>Smart routing</b><small>To the right department</small></div></div>
-          <div className="floating-note note-two"><span className="note-check"><CheckIcon /></span><div><b>Every update, recorded</b><small>Transparent from start to finish</small></div></div>
         </div>
       </div>
     </section>

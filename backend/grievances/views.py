@@ -465,8 +465,20 @@ def respond_to_grievance(request, pk):
         grievance.department = request.user.department
         grievance.save(update_fields=['department'])
 
+    # Once a grievance has been forwarded to Campus Admin, the HOD can only
+    # view it — respond/update is disabled (Campus Admin takes over).
+    has_escalation = Request.objects.filter(
+        grievance=grievance,
+        request_type=Request.RequestType.ESCALATION,
+    ).exists()
+    if is_hod and has_escalation:
+        raise PermissionDenied(
+            'This grievance has been forwarded to Campus Admin and can only be viewed, not updated.'
+        )
+
     # HOD can respond to SUBMITTED, UNDER_REVIEW, IN_PROGRESS, REOPENED
-    # Campus Admin can respond to any actionable status
+    # Campus Admin can respond to any actionable status, including
+    # grievances that have a pending request/appeal awaiting review.
     allowed_statuses = (
         (Grievance.Status.SUBMITTED, Grievance.Status.UNDER_REVIEW,
          Grievance.Status.IN_PROGRESS, Grievance.Status.REOPENED)
@@ -476,7 +488,12 @@ def respond_to_grievance(request, pk):
          Grievance.Status.ESCALATED)
     )
 
-    if grievance.current_status not in allowed_statuses:
+    has_pending_request = Request.objects.filter(
+        grievance=grievance,
+        status=Request.RequestStatus.PENDING,
+    ).exists()
+
+    if grievance.current_status not in allowed_statuses and not (is_admin and has_pending_request):
         return Response(
             {
                 'error': (
@@ -517,15 +534,16 @@ def respond_to_grievance(request, pk):
     grievance.current_status = target_status
     grievance.save(update_fields=['current_status'])
 
-    # If Campus Admin responds to an ESCALATED grievance
+    # If Campus Admin acts on a pending request (escalation, appeal, reopen),
+    # close it out so it leaves the Campus Admin queue.
     if is_admin:
+        pending_requests = Request.objects.filter(
+            grievance=grievance,
+            status=Request.RequestStatus.PENDING,
+        )
         if target_status in (Grievance.Status.RESOLVED, Grievance.Status.REJECTED):
-            # Final action — mark escalation request as RESOLVED
-            Request.objects.filter(
-                grievance=grievance,
-                request_type=Request.RequestType.ESCALATION,
-                status=Request.RequestStatus.PENDING,
-            ).update(
+            # Final action — mark all pending requests as RESOLVED
+            pending_requests.update(
                 status=Request.RequestStatus.RESOLVED,
                 reviewed_by_admin=request.user,
                 admin_remark=content,
@@ -533,18 +551,8 @@ def respond_to_grievance(request, pk):
             )
         else:
             # Intermediate action (IN_PROGRESS, UNDER_REVIEW) — update Request status to match grievance
-            req_status_map = {
-                Grievance.Status.IN_PROGRESS: Request.RequestStatus.FORWARDED,
-                Grievance.Status.UNDER_REVIEW: Request.RequestStatus.FORWARDED,
-                Grievance.Status.SUBMITTED: Request.RequestStatus.FORWARDED,
-            }
-            req_status = req_status_map.get(target_status, Request.RequestStatus.FORWARDED)
-            Request.objects.filter(
-                grievance=grievance,
-                request_type=Request.RequestType.ESCALATION,
-                status=Request.RequestStatus.PENDING,
-            ).update(
-                status=req_status,
+            pending_requests.update(
+                status=Request.RequestStatus.FORWARDED,
                 reviewed_by_admin=request.user,
                 admin_remark=content,
             )
@@ -661,12 +669,27 @@ def resolve_grievance(request, pk):
     if not (is_submitter or is_hod or is_admin):
         raise PermissionDenied('You can only resolve your own grievance.')
 
-    # Campus Admin can resolve ESCALATED, IN_PROGRESS, or UNDER_REVIEW
+    # A grievance forwarded to Campus Admin is read-only for the HOD.
+    has_escalation = Request.objects.filter(
+        grievance=grievance,
+        request_type=Request.RequestType.ESCALATION,
+    ).exists()
+    if is_hod and has_escalation:
+        raise PermissionDenied(
+            'This grievance has been forwarded to Campus Admin and can only be viewed, not updated.'
+        )
+
+    # Campus Admin can resolve ESCALATED, IN_PROGRESS, UNDER_REVIEW,
+    # or any grievance with a pending request/appeal awaiting their review
+    has_pending_request = Request.objects.filter(
+        grievance=grievance,
+        status=Request.RequestStatus.PENDING,
+    ).exists()
     if is_admin and grievance.current_status not in (
         Grievance.Status.ESCALATED,
         Grievance.Status.IN_PROGRESS,
         Grievance.Status.UNDER_REVIEW,
-    ):
+    ) and not has_pending_request:
         raise PermissionDenied('Campus Admin can only resolve ESCALATED, IN_PROGRESS, or UNDER_REVIEW grievances.')
 
     if not is_admin and grievance.current_status not in (
@@ -689,11 +712,10 @@ def resolve_grievance(request, pk):
     grievance.current_status = Grievance.Status.RESOLVED
     grievance.save(update_fields=['current_status'])
 
-    # Update the associated Request status if this was an escalation resolved by Campus Admin
+    # Close out any pending request/appeal when resolved by Campus Admin
     if is_admin:
         Request.objects.filter(
             grievance=grievance,
-            request_type=Request.RequestType.ESCALATION,
             status=Request.RequestStatus.PENDING,
         ).update(
             status=Request.RequestStatus.RESOLVED,
@@ -731,6 +753,15 @@ def reopen_grievance(request, pk):
     ):
         return Response(
             {'error': 'Grievance must be in IN_PROGRESS, RESOLVED, or REJECTED status to reopen.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if grievance.is_reopened or Request.objects.filter(
+        grievance=grievance,
+        request_type=Request.RequestType.REOPEN,
+    ).exists():
+        return Response(
+            {'error': 'A grievance can only be reopened once.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -997,19 +1028,28 @@ class DepartmentDashboardView(generics.GenericAPIView):
         ).order_by('-created_at')
 
         total = grievances_qs.count()
-        open_count = grievances_qs.filter(
+
+        # A grievance that has been escalated (escalation_level > 0) is no
+        # longer actionable by the HOD — even if the Campus Admin later
+        # changes its status (e.g. UNDER_REVIEW).  Exclude those from the
+        # action-required count so the HOD badges stay consistent with the
+        # read-only escalation workflow.
+        action_required_count = grievances_qs.filter(
             current_status__in=(
                 Grievance.Status.SUBMITTED,
                 Grievance.Status.UNDER_REVIEW,
                 Grievance.Status.IN_PROGRESS,
                 Grievance.Status.REOPENED,
             ),
+        ).exclude(escalation_level__gt=0).count()
+        closed_resolved_count = grievances_qs.filter(
+            current_status__in=(
+                Grievance.Status.RESOLVED,
+                Grievance.Status.CLOSED,
+            ),
         ).count()
-        resolved = grievances_qs.filter(
-            current_status=Grievance.Status.RESOLVED,
-        ).count()
-        escalated = grievances_qs.filter(
-            current_status=Grievance.Status.ESCALATED,
+        escalated_count = grievances_qs.filter(
+            escalation_level__gt=0,
         ).count()
         status_breakdown = {
             status_choice: grievances_qs.filter(
@@ -1017,6 +1057,32 @@ class DepartmentDashboardView(generics.GenericAPIView):
             ).count()
             for status_choice in Grievance.Status.values
         }
+
+        # Six-month activity trend scoped to the department (months with no
+        # records are included).  Ordering by the truncated month (instead of
+        # inheriting the base `order_by('-created_at')`) keeps the GROUP BY
+        # correct on SQLite — otherwise each month collapses to per-row groups
+        # of 1.
+        monthly_counts = {
+            item['month'].strftime('%Y-%m'): item['count']
+            for item in grievances_qs.annotate(
+                month=TruncMonth('created_at'),
+            ).values('month').annotate(count=Count('id')).order_by('month')
+            if item['month']
+        }
+        today = timezone.localdate()
+        monthly_trend = []
+        for offset in range(5, -1, -1):
+            month_number = today.month - offset
+            year = today.year
+            if month_number <= 0:
+                month_number += 12
+                year -= 1
+            month = date(year, month_number, 1)
+            monthly_trend.append({
+                'month': month.strftime('%b'),
+                'count': monthly_counts.get(month.strftime('%Y-%m'), 0),
+            })
 
         grievances = grievances_qs[:50]
         data = GrievanceListSerializer(
@@ -1026,10 +1092,11 @@ class DepartmentDashboardView(generics.GenericAPIView):
         return Response({
             'counts': {
                 'total': total,
-                'open': open_count,
-                'resolved': resolved,
-                'escalated': escalated,
+                'action_required': action_required_count,
+                'closed_resolved': closed_resolved_count,
+                'escalated': escalated_count,
                 'status_breakdown': status_breakdown,
+                'monthly_trend': monthly_trend,
             },
             'grievances': data,
         })
@@ -1157,6 +1224,14 @@ def create_grievance_request(request, pk):
     elif request_type == Request.RequestType.REOPEN and grievance.current_status not in (Grievance.Status.RESOLVED, Grievance.Status.IN_PROGRESS):
         return Response(
             {'error': 'Reopen requests can only be submitted for RESOLVED or IN_PROGRESS grievances.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    elif request_type == Request.RequestType.REOPEN and (grievance.is_reopened or Request.objects.filter(
+        grievance=grievance,
+        request_type=Request.RequestType.REOPEN,
+    ).exists()):
+        return Response(
+            {'error': 'A grievance can only be reopened once.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

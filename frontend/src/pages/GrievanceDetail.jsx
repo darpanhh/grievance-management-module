@@ -7,6 +7,11 @@ import RequestModal from '../components/RequestModal';
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(date)) : '—';
 const statusLabel = (status) => status ? status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Initial submission';
+const responderLabel = (response) => {
+  if (response.responder_role === 'Head of Department') return 'HOD';
+  if (response.responder_role === 'Campus Admin') return 'Campus Admin';
+  return response.responder_name || 'Department Representative';
+};
 const isImageAttachment = (attachment) => (attachment.file_type || '').toLowerCase().startsWith('image/');
 const canPreviewAttachment = (attachment) => Boolean(attachment?.file) && (isImageAttachment(attachment) || (attachment.file_type || '').toLowerCase().includes('pdf'));
 const previewKindFromUrl = (url) => {
@@ -139,14 +144,25 @@ const GrievanceDetail = () => {
   // Submitter capabilities
   const isSubmitter = Number(grievance.submitter) === Number(user?.id);
   const needsSensitiveGate = Boolean(grievance.is_sensitive) && !isSubmitter && !revealSensitive;
-  const canSubmitterReopen = isSubmitter && (status === 'RESOLVED' || status === 'REJECTED');
+  const hasReopenedOnce = Boolean(grievance.is_reopened || grievance.requests?.some(r => r.request_type === 'REOPEN'));
+  const canSubmitterReopen = isSubmitter && !hasReopenedOnce && (status === 'RESOLVED' || status === 'REJECTED');
   const canSubmitterAppealRejection = isSubmitter && status === 'REJECTED';
   const canSubmitterClose = isSubmitter && status === 'RESOLVED';
 
   // HOD capabilities
-  const canRespond = (isHOD && ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'].includes(status) && (isSameDept || !userDeptId || !grievanceDeptId))
-    || (isAdmin && status === 'ESCALATED');
-  const canHodEscalate = isHOD && ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'].includes(status);
+  const hasPendingRequest = Boolean(grievance.requests?.some(r => r.status === 'PENDING'));
+  const hasPendingEscalation = Boolean(grievance.requests?.some(r => r.request_type === 'ESCALATION' && r.status === 'PENDING'));
+  const adminInvolved = Boolean(grievance.requests?.some(r => r.reviewed_by_admin));
+  const adminTerminalStatus = ['RESOLVED', 'REJECTED', 'CLOSED'].includes(status);
+  // Once forwarded to Campus Admin (ESCALATED or a pending escalation), the
+  // HOD can only view the grievance — respond/update is disabled.
+  const hodBlockedAfterEscalation = status === 'ESCALATED' || hasPendingEscalation || Number(grievance?.escalation_level) > 0;
+  const canHodAct = isHOD && !hodBlockedAfterEscalation && ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'].includes(status) && (isSameDept || !userDeptId || !grievanceDeptId);
+  const canRespond = canHodAct
+    || (isAdmin && !adminTerminalStatus && (status === 'ESCALATED' || hasPendingRequest || adminInvolved));
+  const canHodEscalate = canHodAct;
+
+  const isAdminRequestReview = isAdmin && !adminTerminalStatus && (status === 'ESCALATED' || hasPendingRequest || adminInvolved);
 
   const pendingRequest = grievance.requests?.find(r => r.status === 'PENDING');
 
@@ -231,50 +247,6 @@ const GrievanceDetail = () => {
             ) : <p className="empty-note">No files were attached to this grievance.</p>}
           </section>
 
-          {/* Reopen Details */}
-          {(() => {
-            const reopenReq = grievance.requests?.find(r => r.request_type === 'REOPEN');
-            const hasReopenData = reopenReq || grievance.reopen_attachments?.length > 0;
-            if (!hasReopenData) return null;
-            return (
-              <section className="detail-section">
-                <h2 className="section-title">
-                  <span className="section-title-accent" />
-                  Reopen Request
-                </h2>
-                {reopenReq?.reason && (
-                  <div className="reopen-reason-box">
-                    <strong>Reason for reopening:</strong>
-                    <p>{reopenReq.reason}</p>
-                  </div>
-                )}
-                {grievance.reopen_attachments?.length > 0 && (
-                  <>
-                    <h3 className="reopen-docs-subtitle">Supporting Documents ({grievance.reopen_attachments.length})</h3>
-                    <ul className="attachment-list">
-                      {grievance.reopen_attachments.map((attachment) => (
-                          <li key={attachment.id}>
-                            <div className="attachment-row">
-                              <span>
-                                <strong>{attachment.file_name}</strong>
-                                <small>{attachment.file_type || 'Attachment'} · uploaded {formatDate(attachment.uploaded_at)}</small>
-                              </span>
-                              <div className="attachment-actions">
-                                {attachment.file && canPreviewAttachment(attachment) && (
-                                  <button className="btn btn-outline attachment-preview" onClick={() => setPreviewId(`reopen-${attachment.id}`)}>Preview</button>
-                                )}
-                              </div>
-                            </div>
-                          </li>
-                        ))
-                      }
-                    </ul>
-                  </>
-                )}
-              </section>
-            );
-          })()}
-
           {/* Student Requests & Appeals Audit History */}
           {grievance.requests?.filter(r => r.request_type !== 'ESCALATION').length > 0 && (
             <section className="detail-section">
@@ -287,9 +259,30 @@ const GrievanceDetail = () => {
                   <article key={req.id} className="request-audit-card">
                     <div className="request-audit-header">
                       <strong>{req.request_type_display}</strong>
-                      <span className={`status-badge req-status-${req.status.toLowerCase()}`}>{req.status}</span>
                     </div>
                     <p className="request-audit-reason"><strong>Reason:</strong> "{req.reason}"</p>
+                    {req.request_type === 'REOPEN' && grievance.reopen_attachments?.length > 0 && (
+                      <div className="reopen-docs-in-card">
+                        <h3 className="reopen-docs-subtitle">Supporting Documents ({grievance.reopen_attachments.length})</h3>
+                        <ul className="attachment-list">
+                          {grievance.reopen_attachments.map((attachment) => (
+                            <li key={attachment.id}>
+                              <div className="attachment-row">
+                                <span>
+                                  <strong>{attachment.file_name}</strong>
+                                  <small>{attachment.file_type || 'Attachment'} · uploaded {formatDate(attachment.uploaded_at)}</small>
+                                </span>
+                                <div className="attachment-actions">
+                                  {attachment.file && canPreviewAttachment(attachment) && (
+                                    <button className="btn btn-outline attachment-preview" onClick={() => setPreviewId(`reopen-${attachment.id}`)}>Preview</button>
+                                  )}
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     {req.attachment && (
                       <div className="request-attachment-snippet">
                         <span>Supporting Document:</span>
@@ -309,7 +302,7 @@ const GrievanceDetail = () => {
                     )}
                     <div className="request-audit-meta">
                       <span>Submitted: {formatDate(req.created_at)}</span>
-                      {req.reviewed_by_admin_name && <span>Reviewed by: {req.reviewed_by_admin_name}</span>}
+                      {req.reviewed_by_admin_name && <span>Reviewed by: Campus Admin</span>}
                     </div>
                     {req.admin_remark && <p className="request-admin-remark"><strong>Campus Admin Remark:</strong> {req.admin_remark}</p>}
                   </article>
@@ -325,10 +318,10 @@ const GrievanceDetail = () => {
             </h2>
             {grievance.responses?.length ? (
               <div className="response-list">
-                {grievance.responses.map((response) => (
+                {[...grievance.responses].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((response) => (
                   <article key={response.id} className="response-card">
                     <header>
-                      <strong>{response.responder_name || (response.responder_role === 'Campus Admin' ? 'Campus Administrator' : 'Department Representative')}</strong>
+                      <strong>{responderLabel(response)}</strong>
                       <time>{formatDate(response.created_at)}</time>
                     </header>
                     <p>{response.content}</p>
@@ -337,29 +330,6 @@ const GrievanceDetail = () => {
               </div>
             ) : <p className="empty-note">No official response has been posted yet.</p>}
           </section>
-
-          {isHOD && status === 'UNDER_REVIEW' && grievance.ai_analysis && (
-            <section className="detail-section ai-analysis-section">
-              <h2 className="section-title">
-                <span className="section-title-accent" />
-                AI Analysis
-              </h2>
-              <div className="ai-analysis-card">
-                <div className="ai-analysis-header">
-                  <span className={`ai-badge ${grievance.ai_analysis.spam_prediction ? 'ai-badge-spam' : 'ai-badge-ham'}`}>
-                    {grievance.ai_analysis.spam_prediction ? 'Spam' : 'Not Spam'}
-                  </span>
-                  <span className="ai-confidence">
-                    Confidence: <strong>{(grievance.ai_analysis.confidence_score * 100).toFixed(0)}%</strong>
-                  </span>
-                </div>
-                {grievance.ai_analysis.classification_reason && (
-                  <p className="ai-reason">{grievance.ai_analysis.classification_reason}</p>
-                )}
-                <p className="ai-disclaimer">AI-generated assessment — for reference only. Final decision must be made by the department.</p>
-              </div>
-            </section>
-          )}
 
           <section className="detail-section">
             <h2 className="section-title">
@@ -409,13 +379,15 @@ const GrievanceDetail = () => {
               <div className="hod-action-panel-header">
                 <div>
                   <h3 style={{ color: '#92400e' }}>Grievance Rejected</h3>
-                  <p style={{ color: '#b45309' }}>If you disagree with the department decision, you can reopen the grievance and send it back to the assigned department for further review. If satisfied, you may close it.</p>
+                  <p style={{ color: '#b45309' }}>{hasReopenedOnce ? 'This grievance has already been reopened once and cannot be reopened again.' : 'If you disagree with the department decision, you can reopen the grievance and send it back to the assigned department for further review. If satisfied, you may close it.'}</p>
                 </div>
               </div>
               <div className="detail-actions">
-                <button className="btn btn-outline" onClick={() => setRequestModalType('REOPEN')} disabled={Boolean(pendingRequest)}>
-                  {pendingRequest ? 'Reopen Request Pending' : 'Reopen & Send to Department'}
-                </button>
+                {!hasReopenedOnce && (
+                  <button className="btn btn-outline" onClick={() => setRequestModalType('REOPEN')} disabled={Boolean(pendingRequest)}>
+                    {pendingRequest ? 'Reopen Request Pending' : 'Reopen & Send to Department'}
+                  </button>
+                )}
                 <button className="btn btn-primary" onClick={() => runAction('close')} disabled={submitting}>
                   Close Grievance
                 </button>
@@ -429,7 +401,7 @@ const GrievanceDetail = () => {
               <div className="hod-action-panel-header">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                 <div>
-                  <h3>{isAdmin && status === 'ESCALATED' ? 'Campus Admin Action' : 'Department HOD Action & Status Management'}</h3>
+                  <h3>{isAdminRequestReview ? 'Campus Admin Action' : 'Department HOD Action & Status Management'}</h3>
                   <p>Provide an official response and update the status for this grievance (Currently: <strong>{statusLabel(status)}</strong>).</p>
                 </div>
               </div>
@@ -446,13 +418,15 @@ const GrievanceDetail = () => {
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
                 <div>
                   <h3>Grievance Controls</h3>
-                  <p>Review the response. You can reopen the grievance to send it back to the department, or close it if satisfied.</p>
+                  <p>{hasReopenedOnce ? 'This grievance has already been reopened once and cannot be reopened again. You can close it if satisfied.' : 'Review the response. You can reopen the grievance to send it back to the department, or close it if satisfied.'}</p>
                 </div>
               </div>
               <div className="detail-actions">
-                <button className="btn btn-outline" onClick={() => setRequestModalType('REOPEN')} disabled={Boolean(pendingRequest)}>
-                  {pendingRequest ? 'Reopen Request Pending' : 'Reopen & Send to Department'}
-                </button>
+                {!hasReopenedOnce && (
+                  <button className="btn btn-outline" onClick={() => setRequestModalType('REOPEN')} disabled={Boolean(pendingRequest)}>
+                    {pendingRequest ? 'Reopen Request Pending' : 'Reopen & Send to Department'}
+                  </button>
+                )}
                 <button className="btn btn-primary" onClick={() => runAction('close')} disabled={submitting}>
                   Close Grievance
                 </button>
@@ -466,7 +440,7 @@ const GrievanceDetail = () => {
         {modal && (
           <div className="modal-backdrop" role="presentation">
             <form className="workflow-modal" onSubmit={(event) => { event.preventDefault(); runAction(modal); }}>
-              <h2>{isAdmin && status === 'ESCALATED' ? 'Campus Admin Response & Status Update' : 'HOD Response & Status Update'}</h2>
+              <h2>{isAdminRequestReview ? 'Campus Admin Response & Status Update' : 'HOD Response & Status Update'}</h2>
 
               {modal === 'respond' && (
                 <>
@@ -477,8 +451,9 @@ const GrievanceDetail = () => {
                     value={selectedStatus}
                     onChange={(e) => setSelectedStatus(e.target.value)}
                   >
-                    {isAdmin && status === 'ESCALATED' ? (
+                    {isAdminRequestReview ? (
                       <>
+                        <option value="UNDER_REVIEW">Under Review (Reviewing Submission)</option>
                         <option value="IN_PROGRESS">In Progress (Active Investigation)</option>
                         <option value="RESOLVED">Resolved (Mark Issue as Solved)</option>
                         <option value="REJECTED">Rejected (Decline / Reject Grievance)</option>

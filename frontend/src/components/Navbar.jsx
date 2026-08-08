@@ -80,7 +80,7 @@ const Navbar = () => {
               </>
             )}
 
-            {user && (
+            {user && !dashboardOnlyRole && (
               <Link
                 to={dashboardUrl}
                 className={`nav-link ${isActive(dashboardUrl) || isActive('/dashboard') ? 'active' : ''}`}
@@ -108,17 +108,13 @@ const Navbar = () => {
 
                 {dropdownOpen && (
                   <div className="dropdown-menu">
-                    <div className="dropdown-header">
-                      <p className="dropdown-user-email">{user.email || user.username}</p>
-                      <span className="role-badge">{user.role || 'User'}</span>
-                    </div>
                     <div className="dropdown-divider"></div>
                     <Link
-                      to={dashboardUrl}
+                      to="/profile"
                       className="dropdown-item"
                       onClick={() => setDropdownOpen(false)}
                     >
-                      📊 Dashboard
+                      👤 Personal Info
                     </Link>
                     <button className="dropdown-item logout-btn" onClick={handleLogout}>
                       🚪 Sign Out

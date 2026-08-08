@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import api from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import SearchFilter from '../components/SearchFilter';
-import AdminRequestDetailModal from '../components/AdminRequestDetailModal';
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(date)) : '—';
 
@@ -21,9 +20,8 @@ const AdminIcon = ({ name }) => {
   const paths = {
     total: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 8h10M7 12h10M7 16h6" /></>,
     pending: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></>,
+    underReview: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>,
     escalated: <><path d="M4 17 10 11l4 4 6-7" /><path d="M15 8h5v5" /></>,
-    spam: <><path d="M12 3 4 6v5c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-3Z" /><path d="m9 9 6 6M15 9l-6 6" /></>,
-    appeal: <><path d="M20 11a8 8 0 1 1-2.3-5.7" /><path d="M20 4v6h-6" /></>,
     resolved: <><circle cx="12" cy="12" r="8" /><path d="m8.5 12 2.3 2.3 4.8-5" /></>,
   };
   return <svg className="admin-kpi-icon" viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
@@ -31,9 +29,7 @@ const AdminIcon = ({ name }) => {
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('REQUESTS'); // 'REQUESTS' | 'SPAM' | 'ALL' | 'CLOSED'
-  const [requestTypeFilter, setRequestTypeFilter] = useState('ALL'); // 'ALL' | 'REOPEN' | 'REJECTION_APPEAL' | 'SPAM_APPEAL' | 'ESCALATION'
-  const [requestStatusFilter, setRequestStatusFilter] = useState('PENDING'); // 'PENDING' | 'CLOSED'
-  
+
   const [metrics, setMetrics] = useState({
     total: 0,
     pending_requests: 0,
@@ -44,20 +40,15 @@ const AdminDashboard = () => {
 
   const [grievances, setGrievances] = useState([]);
   const [requestsList, setRequestsList] = useState([]);
-  const [spamGrievances, setSpamGrievances] = useState([]);
-  const [departments, setDepartments] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
 
-  // Selected Request for Detail Modal
-  const [selectedRequest, setSelectedRequest] = useState(null);
-  const [actionId, setActionId] = useState(null);
-
   // Search & Filters
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [requestGrievanceStatusFilter, setRequestGrievanceStatusFilter] = useState(''); // filters requests by underlying grievance status
   const [statusGroupFilter, setStatusGroupFilter] = useState('');
   const [category, setCategory] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -68,44 +59,19 @@ const AdminDashboard = () => {
     setLoading(true);
     setError('');
     try {
-      // Fetch Dashboard Overview Metrics & Department List
-      const [dashRes, deptRes] = await Promise.all([
-        api.get('dashboard/admin/'),
-        api.get('departments/'),
-      ]);
+      // Fetch Dashboard Overview Metrics
+      const dashRes = await api.get('dashboard/admin/');
 
       if (dashRes.data?.counts) {
         setMetrics(dashRes.data.counts);
       }
-      setDepartments(deptRes.data || []);
 
       if (activeTab === 'REQUESTS') {
-        const params = {
-          ...(requestTypeFilter !== 'ALL' && { request_type: requestTypeFilter }),
-          ...(search && { search }),
-        };
-        if (requestStatusFilter === 'PENDING') {
-          // Active view — only requests awaiting Campus Admin review
-          const { data } = await api.get('admin/requests/', {
-            params: { ...params, status: 'PENDING' },
-          });
-          setRequestsList(Array.isArray(data) ? data : data.results || []);
-        } else {
-          // Closed / Resolved view — forwarded + rejected requests only
-          const [forwardedRes, rejectedRes] = await Promise.all([
-            api.get('admin/requests/', { params: { ...params, status: 'FORWARDED' } }),
-            api.get('admin/requests/', { params: { ...params, status: 'REJECTED' } }),
-          ]);
-          const merged = [
-            ...(Array.isArray(forwardedRes.data) ? forwardedRes.data : forwardedRes.data.results || []),
-            ...(Array.isArray(rejectedRes.data) ? rejectedRes.data : rejectedRes.data.results || []),
-          ];
-          merged.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-          setRequestsList(merged);
-        }
-      } else if (activeTab === 'SPAM') {
-        const { data } = await api.get('admin/spam-queue/');
-        setSpamGrievances(Array.isArray(data) ? data : data.results || []);
+        // Requests awaiting Campus Admin review (grievance-status filter applied client-side)
+        const { data } = await api.get('admin/requests/', {
+          params: { status: 'PENDING', ...(search && { search }) },
+        });
+        setRequestsList(Array.isArray(data) ? data : data.results || []);
       } else {
         // ALL or CLOSED grievances
         const { data } = await api.get('grievances/', {
@@ -127,66 +93,60 @@ const AdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, requestTypeFilter, requestStatusFilter, search, statusFilter, statusGroupFilter, category, dateFrom, dateTo, ordering]);
+  }, [activeTab, search, statusFilter, statusGroupFilter, category, dateFrom, dateTo, ordering]);
 
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
-
-  // Restore grievance from Spam Review Page
-  const handleRestoreSpam = async (id) => {
-    setActionId(id);
-    setToast('');
-    setError('');
-    try {
-      await api.post(`admin/spam-queue/${id}/reinstate/`);
-      setToast(`Grievance GMS-${String(id).padStart(4, '0')} restored from Spam and routed to department.`);
-      await fetchDashboardData();
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to restore grievance from spam.');
-    } finally {
-      setActionId(null);
-    }
-  };
-
-  // Confirm Spam action from Spam Review Page
-  const handleConfirmSpam = async (id) => {
-    setActionId(id);
-    setToast('');
-    setError('');
-    try {
-      await api.post(`grievances/${id}/close/`);
-      setToast(`Spam classification confirmed for GMS-${String(id).padStart(4, '0')}. Grievance closed.`);
-      await fetchDashboardData();
-    } catch (err) {
-      setError(err.response?.data?.error || err.response?.data?.detail || 'Failed to confirm spam.');
-    } finally {
-      setActionId(null);
-    }
-  };
 
   // Filtered list for CLOSED tab if needed
   const displayGrievances = activeTab === 'CLOSED'
     ? grievances.filter(g => ['RESOLVED', 'CLOSED'].includes(g.current_status))
     : grievances;
 
+  // Client-side status + date filter and sort for the Requests list.
+  // Requests whose grievance is already RESOLVED or REJECTED are excluded —
+  // the Campus Admin is done with them.
+  const requestEffectiveDate = (req) => new Date(req.request_type === 'ESCALATION' ? req.grievance_created_at : req.created_at);
+  const displayRequests = requestsList
+    .filter((req) => !['RESOLVED', 'REJECTED'].includes(req.grievance_current_status))
+    .filter((req) => {
+      if (requestGrievanceStatusFilter && req.grievance_current_status !== requestGrievanceStatusFilter) return false;
+      const date = requestEffectiveDate(req);
+      if (dateFrom && date < new Date(dateFrom)) return false;
+      if (dateTo) {
+        const end = new Date(dateTo);
+        end.setHours(23, 59, 59, 999);
+        if (date > end) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const diff = requestEffectiveDate(a) - requestEffectiveDate(b);
+      return ordering === 'created_at' ? diff : -diff;
+    });
+
   const statusCounts = metrics.status_breakdown || {};
-  const pendingGrievances = (statusCounts.SUBMITTED || 0) + (statusCounts.APPEAL_PENDING || 0);
-  const inProgressGrievances = statusCounts.UNDER_REVIEW || 0;
-  const openAppeals = (metrics.pending_requests_breakdown?.REJECTION_APPEAL || 0) + (metrics.pending_requests_breakdown?.SPAM_APPEAL || 0) + (metrics.pending_requests_breakdown?.REOPEN || 0);
+  const underReviewGrievances = statusCounts.UNDER_REVIEW || 0;
+  const inProgressGrievances = statusCounts.IN_PROGRESS || 0;
   const showAllGrievances = () => {
     setStatusFilter('');
     setStatusGroupFilter('');
     setActiveTab('ALL');
   };
-  const showPendingGrievances = () => {
-    setStatusFilter('');
-    setStatusGroupFilter('PENDING');
+  const showSubmittedGrievances = () => {
+    setStatusFilter('SUBMITTED');
+    setStatusGroupFilter('');
     setActiveTab('ALL');
   };
   const showInProgressGrievances = () => {
-    setStatusFilter('');
-    setStatusGroupFilter('IN_PROGRESS');
+    setStatusFilter('IN_PROGRESS');
+    setStatusGroupFilter('');
+    setActiveTab('ALL');
+  };
+  const showUnderReviewGrievances = () => {
+    setStatusFilter('UNDER_REVIEW');
+    setStatusGroupFilter('');
     setActiveTab('ALL');
   };
   const showEscalatedGrievances = () => {
@@ -199,15 +159,15 @@ const AdminDashboard = () => {
     setStatusGroupFilter('');
     setActiveTab('ALL');
   };
+  const showReopenedGrievances = () => {
+    setStatusFilter('REOPENED');
+    setStatusGroupFilter('');
+    setActiveTab('ALL');
+  };
   const showResolvedGrievances = () => {
     setStatusFilter('');
     setStatusGroupFilter('RESOLVED');
-    setActiveTab('ALL');
-  };
-  const showSpamReview = () => {
-    setStatusFilter('');
-    setStatusGroupFilter('');
-    setActiveTab('SPAM');
+    setActiveTab('CLOSED');
   };
   const showRequests = () => {
     setStatusFilter('');
@@ -215,11 +175,12 @@ const AdminDashboard = () => {
     setActiveTab('REQUESTS');
   };
   const primaryStatusDistribution = [
-    { label: 'Pending', value: pendingGrievances, color: '#f59e0b', onClick: showPendingGrievances },
+    { label: 'Submitted', value: statusCounts.SUBMITTED || 0, color: '#f59e0b', onClick: showSubmittedGrievances },
+    { label: 'Under review', value: underReviewGrievances, color: '#0ea5e9', onClick: showUnderReviewGrievances },
     { label: 'In progress', value: inProgressGrievances, color: '#6366f1', onClick: showInProgressGrievances },
     { label: 'Escalated', value: metrics.escalated || 0, color: '#f97316', onClick: showEscalatedGrievances },
+    { label: 'Reopened', value: statusCounts.REOPENED || 0, color: '#7e22ce', onClick: showReopenedGrievances },
     { label: 'Resolved', value: metrics.closed_resolved || 0, color: '#10b981', onClick: showResolvedGrievances },
-    { label: 'Spam', value: metrics.spam_review || 0, color: '#ef4444', onClick: showSpamReview },
     { label: 'Rejected', value: statusCounts.REJECTED || 0, color: '#e11d48', onClick: showRejectedGrievances },
   ];
   const statusDistribution = primaryStatusDistribution.filter((item) => item.value > 0);
@@ -236,10 +197,9 @@ const AdminDashboard = () => {
   const trendMax = Math.max(...monthlyTrend.map((item) => item.count), 1);
   const kpis = [
     { label: 'Total Grievances', value: metrics.total || 0, icon: 'total', tone: 'primary', onClick: showAllGrievances },
+    { label: 'Under Review', value: underReviewGrievances, icon: 'underReview', tone: 'primary', onClick: showUnderReviewGrievances },
     { label: 'In Progress', value: inProgressGrievances, icon: 'pending', tone: 'primary', onClick: showInProgressGrievances },
     { label: 'Escalated Cases', value: metrics.escalated || 0, icon: 'escalated', tone: 'orange', onClick: showEscalatedGrievances },
-    { label: 'Spam Reviews', value: metrics.spam_review || 0, icon: 'spam', tone: 'danger', onClick: showSpamReview },
-    { label: 'Open Appeals', value: openAppeals, icon: 'appeal', tone: 'violet', onClick: showRequests },
     { label: 'Resolved Grievances', value: metrics.closed_resolved || 0, icon: 'resolved', tone: 'success', onClick: showResolvedGrievances },
   ];
 
@@ -248,9 +208,9 @@ const AdminDashboard = () => {
       <div className="dashboard-container">
         <header className="dashboard-heading">
           <div>
-            <span>System Administration</span>
-            <h1>Grievance Overview</h1>
-            <p>Monitor campus-wide grievance activity and focus on the work that needs attention.</p>
+            
+            <h1>Campus Administration</h1>
+            <p>Monitor campus-wide grievances and focus on what needs attention.</p>
           </div>
         </header>
 
@@ -268,25 +228,31 @@ const AdminDashboard = () => {
 
         <section className="admin-charts-grid" aria-label="Grievance analytics">
           <article className="admin-chart-card status-chart-card">
-            <div className="admin-chart-heading"><div><span>LIVE DISTRIBUTION</span><h2>Grievances by Status</h2></div><small>Current workload</small></div>
+            <div className="admin-chart-heading"><div><span>LIVE DISTRIBUTION</span><h2>Grievances by Status</h2></div></div>
             <div className="admin-status-chart-body">
               <div className="admin-donut" style={{ background: statusGradient }} role="img" aria-label={`${metrics.total || 0} total grievances`}><div><strong>{metrics.total || 0}</strong><span>Total</span></div></div>
               <div className="admin-chart-legend">{statusDistribution.length ? statusDistribution.map((item) => <button type="button" key={item.label} onClick={item.onClick}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.value}</strong></button>) : <p>No grievance data yet.</p>}</div>
             </div>
           </article>
           <article className="admin-chart-card trend-chart-card">
-            <div className="admin-chart-heading"><div><span>LAST SIX MONTHS</span><h2>Monthly Grievance Trend</h2></div><small>New submissions</small></div>
+            <div className="admin-chart-heading"><div><span>LAST SIX MONTHS</span><h2>Monthly Grievance Trend</h2></div></div>
             <div className="admin-bar-chart" role="img" aria-label="Monthly grievance trend">{monthlyTrend.map((item) => <div className="admin-bar-column" key={item.month}><span className="admin-bar-value">{item.count}</span><div className="admin-bar-track"><i style={{ height: `${Math.max(item.count ? 12 : 0, (item.count / trendMax) * 100)}%` }} /></div><span className="admin-bar-label">{item.month}</span></div>)}</div>
           </article>
         </section>
 
         <div className="admin-workspace-label">
-          <div><span>WORKSPACE</span><h2>{activeTab === 'REQUESTS' ? 'Requests & Appeals' : activeTab === 'SPAM' ? 'Spam Review Queue' : activeTab === 'CLOSED' ? 'Resolved Grievances' : 'All Grievances'}</h2></div>
-          <p>Use the tabs and filters to review records.</p>
+          <div><h2>{activeTab === 'REQUESTS' ? 'Action Required' : activeTab === 'CLOSED' ? 'Resolved Grievances' : 'All Grievances'}</h2></div>
+          
         </div>
 
         {/* Primary Admin Navigation Tabs */}
         <nav className="hod-status-tabs" aria-label="Admin navigation tabs">
+          <button
+            className={`hod-tab-btn ${activeTab === 'REQUESTS' ? 'active' : ''}`}
+            onClick={showRequests}
+          >
+            Action Required <span className="hod-tab-badge">{displayRequests.length}</span>
+          </button>
           <button
             className={`hod-tab-btn ${activeTab === 'ALL' ? 'active' : ''}`}
             onClick={showAllGrievances}
@@ -294,89 +260,28 @@ const AdminDashboard = () => {
             All Grievances ({metrics.total || 0})
           </button>
           <button
-            className={`hod-tab-btn ${activeTab === 'REQUESTS' ? 'active' : ''}`}
-            onClick={showRequests}
-          >
-            Requests <span className="hod-tab-badge">{metrics.pending_requests || 0}</span>
-          </button>
-          <button
-            className={`hod-tab-btn ${activeTab === 'SPAM' ? 'active' : ''}`}
-            onClick={showSpamReview}
-          >
-            Spam Review <span className="hod-tab-badge">{metrics.spam_review || 0}</span>
-          </button>
-          <button
             className={`hod-tab-btn ${activeTab === 'CLOSED' ? 'active' : ''}`}
             onClick={showResolvedGrievances}
           >
-            Closed ({metrics.closed_resolved || 0})
+            Resolved ({metrics.closed_resolved || 0})
           </button>
         </nav>
 
-        {/* Sub-filtering for Requests Page */}
+        {/* Search & Filter for Requests */}
         {activeTab === 'REQUESTS' && (
-          <>
-            <div className="request-subfilter-bar">
-              <span>Request Status:</span>
-              <button
-                className={`filter-btn ${requestStatusFilter === 'PENDING' ? 'active' : ''}`}
-                onClick={() => setRequestStatusFilter('PENDING')}
-              >
-                Active / Pending ({metrics.pending_requests || 0})
-              </button>
-              <button
-                className={`filter-btn ${requestStatusFilter === 'CLOSED' ? 'active' : ''}`}
-                onClick={() => setRequestStatusFilter('CLOSED')}
-              >
-                Closed / Resolved
-              </button>
-            </div>
-            <div className="request-subfilter-bar">
-              <span>Filter by Type:</span>
-              <button
-                className={`filter-btn ${requestTypeFilter === 'ALL' ? 'active' : ''}`}
-                onClick={() => setRequestTypeFilter('ALL')}
-              >
-                All Requests
-              </button>
-              {(metrics.pending_requests_breakdown?.ESCALATION || 0) > 0 && (
-                <button
-                  className={`filter-btn ${requestTypeFilter === 'ESCALATION' ? 'active' : ''}`}
-                  onClick={() => setRequestTypeFilter('ESCALATION')}
-                >
-                  Escalations ({metrics.pending_requests_breakdown?.ESCALATION || 0})
-                </button>
-              )}
-              {(metrics.pending_requests_breakdown?.REJECTION_APPEAL || 0) > 0 && (
-                <button
-                  className={`filter-btn ${requestTypeFilter === 'REJECTION_APPEAL' ? 'active' : ''}`}
-                  onClick={() => setRequestTypeFilter('REJECTION_APPEAL')}
-                >
-                  Rejection Appeals ({metrics.pending_requests_breakdown?.REJECTION_APPEAL || 0})
-                </button>
-              )}
-              {(metrics.pending_requests_breakdown?.SPAM_APPEAL || 0) > 0 && (
-                <button
-                  className={`filter-btn ${requestTypeFilter === 'SPAM_APPEAL' ? 'active' : ''}`}
-                  onClick={() => setRequestTypeFilter('SPAM_APPEAL')}
-                >
-                  Spam Appeals ({metrics.pending_requests_breakdown?.SPAM_APPEAL || 0})
-                </button>
-              )}
-              {(metrics.pending_requests_breakdown?.REOPEN || 0) > 0 && (
-                <button
-                  className={`filter-btn ${requestTypeFilter === 'REOPEN' ? 'active' : ''}`}
-                  onClick={() => setRequestTypeFilter('REOPEN')}
-                >
-                  Reopen Requests ({metrics.pending_requests_breakdown?.REOPEN || 0})
-                </button>
-              )}
-            </div>
-          </>
+          <SearchFilter
+            value={search} onSearchChange={setSearch}
+            statuses={['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED', 'ESCALATED', 'CLOSED']}
+            status={requestGrievanceStatusFilter} onStatusChange={setRequestGrievanceStatusFilter}
+            dateFrom={dateFrom} onDateFromChange={setDateFrom}
+            dateTo={dateTo} onDateToChange={setDateTo}
+            ordering={ordering} onOrderingChange={setOrdering}
+            showCategory={false}
+          />
         )}
 
-        {/* Search & Filter for All / Closed Grievances */}
-        {(activeTab === 'ALL' || activeTab === 'CLOSED') && (
+        {/* Search & Filter for All Grievances */}
+        {activeTab === 'ALL' && (
           <SearchFilter
             value={search} onSearchChange={setSearch}
             status={statusFilter} onStatusChange={(value) => { setStatusGroupFilter(''); setStatusFilter(value); }}
@@ -384,6 +289,18 @@ const AdminDashboard = () => {
             dateFrom={dateFrom} onDateFromChange={setDateFrom}
             dateTo={dateTo} onDateToChange={setDateTo}
             ordering={ordering} onOrderingChange={setOrdering}
+          />
+        )}
+
+        {/* Search & Filter for Resolved Grievances (no status dropdown) */}
+        {activeTab === 'CLOSED' && (
+          <SearchFilter
+            value={search} onSearchChange={setSearch}
+            category={category} onCategoryChange={setCategory}
+            dateFrom={dateFrom} onDateFromChange={setDateFrom}
+            dateTo={dateTo} onDateToChange={setDateTo}
+            ordering={ordering} onOrderingChange={setOrdering}
+            showStatus={false}
           />
         )}
 
@@ -395,116 +312,36 @@ const AdminDashboard = () => {
           </div>
         ) : activeTab === 'REQUESTS' ? (
           /* Dedicated Requests View */
-          requestsList.length === 0 ? (
-            requestStatusFilter === 'CLOSED' ? (
-              <div className="dashboard-state">
-                <h2>No Closed or Resolved Requests</h2>
-                <p>Forwarded and rejected requests will appear here once processed.</p>
-              </div>
-            ) : (
-              <div className="dashboard-state">
-                <h2>No Pending Requests</h2>
-                <p>There are no active student appeals or reopening requests matching the selected filter.</p>
-              </div>
-            )
+          displayRequests.length === 0 ? (
+            <div className="dashboard-state">
+              <h2>No Requests Found</h2>
+              <p>No requests match the current filter criteria.</p>
+            </div>
           ) : (
             <div className="grievance-card-list">
-              {requestsList.map((reqItem) => (
-                <article key={reqItem.id} className="hod-grievance-card request-card">
+              {displayRequests.map((reqItem) => (
+                <article key={reqItem.id} className="hod-grievance-card">
                   <div className="hod-card-top">
                     <div>
-                      <span className="req-type-tag">{requestTypeLabel(reqItem.request_type)}</span>
-                      <h3 className="hod-card-title">
-                        GMS-{String(reqItem.grievance).padStart(4, '0')}: {reqItem.grievance_title}
-                      </h3>
+                      <span className="hod-card-id">GMS-{String(reqItem.grievance).padStart(4, '0')}</span>
+                      <h3 className="hod-card-title">{reqItem.grievance_title}</h3>
                     </div>
-                    <span className={`status-badge req-status-${reqItem.status.toLowerCase()}`}>{reqItem.status}</span>
-                  </div>
-
-                  <div className="request-card-reason">
-                    <strong>Student Reason:</strong>
-                    <p>"{reqItem.reason}"</p>
+                    <StatusBadge status={reqItem.grievance_current_status} />
                   </div>
 
                   <div className="hod-card-meta">
+                    <span>Request Type: <strong>{requestTypeLabel(reqItem.request_type)}</strong></span>
                     <span>Submitted By: <strong>{reqItem.student_name}</strong></span>
-                    <span>Date: <strong>{formatDate(reqItem.request_type === 'ESCALATION' ? reqItem.grievance_created_at : reqItem.created_at)}</strong></span>
-                    {reqItem.forwarded_department_name && (
-                      <span>Forwarded To: <strong>{reqItem.forwarded_department_name}</strong></span>
-                    )}
-                    {requestStatusFilter === 'CLOSED' && reqItem.reviewed_by_admin_name && (
-                      <span>Reviewed By: <strong>{reqItem.reviewed_by_admin_name}</strong></span>
-                    )}
+                    <span>Submitted: <strong>{formatDate(reqItem.request_type === 'ESCALATION' ? reqItem.grievance_created_at : reqItem.created_at)}</strong></span>
                   </div>
 
                   <div className="hod-card-actions">
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => setSelectedRequest(reqItem)}
-                    >
-                      {requestStatusFilter === 'CLOSED' ? 'View Decision Record' : 'View Details & Review'}
-                    </button>
+                    <Link to={`/grievances/${reqItem.grievance}`} className="btn btn-primary btn-sm">
+                      View Details & Review
+                    </Link>
                   </div>
                 </article>
               ))}
-            </div>
-          )
-        ) : activeTab === 'SPAM' ? (
-          /* Separate Spam Review View */
-          spamGrievances.length === 0 ? (
-            <div className="dashboard-state">
-              <h2>Spam Queue is Clean</h2>
-              <p>No grievances are currently classified as Spam awaiting review.</p>
-            </div>
-          ) : (
-            <div className="grievance-card-list">
-              {spamGrievances.map((grievance) => {
-                const ai = grievance.ai_analysis;
-                return (
-                  <article key={grievance.id} className="hod-grievance-card spam-card">
-                    <div className="hod-card-top">
-                      <div>
-                        <span className="hod-card-id">GMS-{String(grievance.id).padStart(4, '0')}</span>
-                        <h3 className="hod-card-title">{grievance.title}</h3>
-                      </div>
-                      <span className="status-badge spam-badge">AI SPAM DETECTED</span>
-                    </div>
-
-                    {ai && (
-                      <div className="spam-details-snippet">
-                        <span>Confidence Score: <strong>{(ai.confidence_score * 100).toFixed(1)}%</strong></span>
-                        <span>Flag Source: <strong>AI Spam Detector</strong></span>
-                        <p><strong>Reason:</strong> {ai.classification_reason || 'Automated text filtering rules.'}</p>
-                      </div>
-                    )}
-
-                    <div className="hod-card-meta">
-                      <span>Submitted: <strong>{formatDate(grievance.created_at)}</strong></span>
-                      <span>Submitter: <strong>{grievance.is_anonymous ? 'Anonymous' : grievance.submitter_name || 'User'}</strong></span>
-                    </div>
-
-                    <div className="hod-card-actions">
-                      <Link to={`/grievances/${grievance.id}`} className="btn btn-outline btn-sm">
-                        View Details
-                      </Link>
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={() => handleRestoreSpam(grievance.id)}
-                        disabled={actionId === grievance.id}
-                      >
-                        {actionId === grievance.id ? 'Restoring…' : 'Restore Grievance'}
-                      </button>
-                      <button
-                        className="btn btn-danger btn-sm"
-                        onClick={() => handleConfirmSpam(grievance.id)}
-                        disabled={actionId === grievance.id}
-                      >
-                        Confirm Spam
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
             </div>
           )
         ) : (
@@ -544,18 +381,6 @@ const AdminDashboard = () => {
           )
         )}
 
-        {/* Modal for Admin Request Review */}
-        {selectedRequest && (
-          <AdminRequestDetailModal
-            requestItem={selectedRequest}
-            departments={departments}
-            onClose={() => setSelectedRequest(null)}
-            onSuccess={(msg) => {
-              setToast(msg);
-              fetchDashboardData();
-            }}
-          />
-        )}
       </div>
     </section>
   );
