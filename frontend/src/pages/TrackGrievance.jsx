@@ -30,14 +30,16 @@ const TrackGrievance = () => {
   return (
     <section className="track-page-redesign">
       <div className="track-hero">
-        <div><h1>Track a grievance</h1><p>Use the unique Grievance ID and Secret Code you received when submitting your concern.</p></div>
+        <div><h1>Track a grievance</h1><p>Enter the Grievance ID and Secret Code you received when submitting your concern.</p></div>
       </div>
 
       <div className="track-workspace track-lookup-workspace">
         <form className="anonymous-track-panel" onSubmit={submit}>
           <div className="panel-heading"><div><h2>Find your grievance</h2><p>Enter the details exactly as they were provided.</p></div></div>
-          <div className="track-field"><label htmlFor="grievance-id">Grievance ID</label><input id="grievance-id" inputMode="numeric" type="number" min="1" required value={credentials.id} onChange={(event) => setCredentials((current) => ({ ...current, id: event.target.value }))} placeholder="For example: GMS-0007" /></div>
-          <div className="track-field"><label htmlFor="secret-code">Secret Code</label><input id="secret-code" required value={credentials.secret_code} onChange={(event) => setCredentials((current) => ({ ...current, secret_code: event.target.value }))} placeholder="Your 8-character code" autoCapitalize="characters" /></div>
+          <div className="track-fields-row">
+            <div className="track-field"><label htmlFor="grievance-id">Grievance ID</label><input id="grievance-id" inputMode="numeric" type="number" min="1" required value={credentials.id} onChange={(event) => setCredentials((current) => ({ ...current, id: event.target.value }))} placeholder="e.g. GMS-0007" /></div>
+            <div className="track-field"><label htmlFor="secret-code">Secret Code</label><input id="secret-code" required value={credentials.secret_code} onChange={(event) => setCredentials((current) => ({ ...current, secret_code: event.target.value }))} placeholder="Your 8-character code" autoCapitalize="characters" /></div>
+          </div>
           {error && <div className="form-alert danger" role="alert">{error}</div>}
           <button className="track-submit" disabled={loading} type="submit">⌕ &nbsp; {loading ? 'Looking up…' : 'Track Grievance'}</button>
           

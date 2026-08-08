@@ -40,7 +40,7 @@ const Landing = () => {
           <div className="hero-heading-row"><div className="hero-logo-wrapper"><img src={logo} alt="IOE Pulchowk Campus Logo" className="hero-logo" /></div><span className="hero-kicker">YOUR VOICE, HEARD</span></div>
           <h1 className="hero-title">A better path from <span className="gradient-text">concern to change.</span></h1>
           <p className="hero-description">One trusted place for the IOE Pulchowk Campus  to raise campus concerns, receive meaningful responses, and follow every step forward.</p>
-          <div className="hero-cta-group"><Link to="/register" className="btn btn-hero-primary">Create an account <ArrowIcon /></Link><Link to="/grievances/track" className="btn btn-hero-secondary">Track a grievance</Link><Link to="/login" className="btn btn-hero-outline">Account login</Link></div>
+          <div className="hero-cta-group"><Link to="/register" className="btn btn-hero-primary">Create an account <ArrowIcon /></Link><Link to="/grievances/track" className="btn btn-hero-secondary">Track a grievance</Link><Link to="/login" className="btn btn-hero-outline">Login</Link></div>
           <div className="hero-trust"><span><CheckIcon /> Private by design</span><span><CheckIcon /> Clear status updates</span></div>
         </div>
         <div className="hero-visual" aria-hidden="true">
