@@ -41,6 +41,11 @@ urlpatterns = [
         name='reopen_grievance',
     ),
     path(
+        'grievances/<int:pk>/comment/',
+        views.post_status_comment,
+        name='post_status_comment',
+    ),
+    path(
         'grievances/<int:pk>/close/',
         views.close_grievance,
         name='close_grievance',

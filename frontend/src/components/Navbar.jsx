@@ -93,7 +93,7 @@ const Navbar = () => {
 
           {/* User Auth Controls / Dropdown */}
           <div className="navbar-auth">
-            {user ? (
+            {user && (
               <div className="user-dropdown-container">
                 <button
                   className="user-profile-btn"
@@ -121,15 +121,6 @@ const Navbar = () => {
                     </button>
                   </div>
                 )}
-              </div>
-            ) : (
-              <div className="auth-buttons">
-                <Link to="/login" className="btn btn-outline" onClick={() => setMobileMenuOpen(false)}>
-                  Log In
-                </Link>
-                <Link to="/register" className="btn btn-primary" onClick={() => setMobileMenuOpen(false)}>
-                  Get Started
-                </Link>
               </div>
             )}
           </div>

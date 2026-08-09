@@ -2,7 +2,6 @@ import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import logo from '../assets/logo.png';
 
-const ArrowIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" /></svg>;
 const RouteIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9a4 4 0 1 1 0 8H9a4 4 0 1 0 0 8h11" /><path d="m16 3 3 3-3 3M16 18l3 3-3 3" /></svg>;
 const BellIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>;
 const ShieldIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 5 3 8.5 7 10 4-1.5 7-5 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></svg>;
@@ -40,7 +39,7 @@ const Landing = () => {
           <div className="hero-heading-row"><div className="hero-logo-wrapper"><img src={logo} alt="IOE Pulchowk Campus Logo" className="hero-logo" /></div><span className="hero-kicker">YOUR VOICE, HEARD</span></div>
           <h1 className="hero-title">A better path from <span className="gradient-text">concern to change.</span></h1>
           <p className="hero-description">One trusted place for the IOE Pulchowk Campus  to raise campus concerns, receive meaningful responses, and follow every step forward.</p>
-          <div className="hero-cta-group"><Link to="/register" className="btn btn-hero-primary">Create an account <ArrowIcon /></Link><Link to="/grievances/track" className="btn btn-hero-secondary">Track a grievance</Link><Link to="/login" className="btn btn-hero-outline">Login</Link></div>
+          <div className="hero-cta-group"><Link to="/login" className="btn btn-hero-primary">Login</Link><Link to="/grievances/track" className="btn btn-hero-track">Track a grievance</Link></div>
           <div className="hero-trust"><span><CheckIcon /> Private by design</span><span><CheckIcon /> Clear status updates</span></div>
         </div>
         <div className="hero-visual" aria-hidden="true">

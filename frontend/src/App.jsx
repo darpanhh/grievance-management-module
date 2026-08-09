@@ -31,6 +31,13 @@ const DashboardRedirect = () => {
   return <Navigate to="/dashboard" replace />;
 };
 
+// Redirect that carries any router state through (e.g. a freshly submitted
+// grievance's one-time secret code) instead of dropping it.
+const PreserveStateRedirect = ({ to }) => {
+  const location = useLocation();
+  return <Navigate to={to} replace state={location.state} />;
+};
+
 const NotFoundPlaceholder = () => (
   <div className="placeholder-page">
     <div className="placeholder-card error-card">
@@ -55,7 +62,7 @@ function App() {
 function AppShell() {
   const location = useLocation();
   const { user } = useAuth();
-  const hideFooter = ['/grievances/new', '/dashboard', '/department/grievances', '/admin/grievances', '/login', '/register', '/password-reset', '/grievances/track'].includes(location.pathname) || (location.pathname === '/' && !!user);
+  const hideFooter = location.pathname.startsWith('/grievances/') || ['/dashboard', '/department/grievances', '/admin/grievances', '/login', '/register', '/password-reset'].includes(location.pathname) || (location.pathname === '/' && !!user);
   return (
     <div className="app-layout">
       <Navbar />
@@ -113,9 +120,9 @@ function AppShell() {
               </ProtectedRoute>
             }
           />
-          <Route path="/dashboard/student" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard/department" element={<Navigate to="/department/grievances" replace />} />
-          <Route path="/dashboard/admin" element={<Navigate to="/admin/grievances" replace />} />
+          <Route path="/dashboard/student" element={<PreserveStateRedirect to="/dashboard" />} />
+          <Route path="/dashboard/department" element={<PreserveStateRedirect to="/department/grievances" />} />
+          <Route path="/dashboard/admin" element={<PreserveStateRedirect to="/admin/grievances" />} />
 
           {/* 404 Catch-All */}
           <Route path="*" element={<NotFoundPlaceholder />} />

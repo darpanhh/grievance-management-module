@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import FileUpload from '../components/FileUpload';
 
@@ -7,7 +7,7 @@ const initialForm = { title: '', description: '', category: '', department: '', 
 
 const getErrorMessage = (error) => {
   const data = error.response?.data;
-  if (error.response?.status === 429) return data?.detail || 'You have reached the daily limit of 3 grievances. Please try again after midnight.';
+  if (error.response?.status === 429) return data?.detail || 'You have reached the daily limit of 3 grievances. Please try again tomorrow.';
   if (typeof data === 'string') return data;
   if (data?.detail || data?.message || data?.error) return data.detail || data.message || data.error;
   if (data && typeof data === 'object') {
@@ -24,7 +24,8 @@ const SubmitGrievance = () => {
   const [loadingOptions, setLoadingOptions] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [confirmation, setConfirmation] = useState(null);
+  const [limitError, setLimitError] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
     Promise.all([api.get('categories/'), api.get('departments/')])
@@ -56,11 +57,14 @@ const SubmitGrievance = () => {
     setSubmitting(true);
     try {
       const { data } = await api.post('grievances/', payload, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setConfirmation(data);
-      setForm(initialForm);
-      setFiles([]);
+      navigate('/dashboard', { state: { submitted: data } });
     } catch (requestError) {
-      setError(getErrorMessage(requestError));
+      const message = getErrorMessage(requestError);
+      if (requestError.response?.status === 429) {
+        setLimitError(message);
+      } else {
+        setError(message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -93,10 +97,27 @@ const SubmitGrievance = () => {
             </div>
           </div>
           <div className="form-group"><label>Attachments <small>(optional)</small></label><FileUpload files={files} onChange={setFiles} disabled={submitting} /></div>
-          <button className="btn btn-primary submit-grievance-btn" type="submit" disabled={submitting || loadingOptions}>{submitting ? 'Submitting…' : 'Submit grievance'}</button>
+          <button className="btn btn-primary submit-grievance-btn" type="submit" disabled={submitting || loadingOptions}>Submit grievance</button>
         </form>
       </div>
-      {confirmation && <div className="modal-backdrop" role="presentation"><div className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="confirmation-title"><div className="success-mark">✓</div><h2 id="confirmation-title">Grievance submitted</h2><p>Your grievance has been recorded. Keep these details for your records.</p><div className="confirmation-id"><span>Grievance ID</span><strong>GMS-{String(confirmation.id).padStart(4, '0')}</strong></div>{confirmation.secret_code && <div className="secret-code"><span>Anonymous secret code — shown once only</span><strong>{confirmation.secret_code}</strong><small>Copy and save this code. It is required to track this grievance.</small></div>}<div className="modal-actions"><Link className="btn btn-outline" to="/grievances/track">Track grievance</Link><button className="btn btn-primary" onClick={() => setConfirmation(null)}>Done</button></div></div></div>}
+      {submitting && (
+        <div className="submit-loading-overlay">
+          <div className="spinner"></div>
+          <p>Submitting grievance...</p>
+        </div>
+      )}
+      {limitError && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="confirmation-modal" role="alertdialog" aria-modal="true" aria-labelledby="limit-title">
+            <div className="error-mark">!</div>
+            <h2 id="limit-title">Daily submission limit reached</h2>
+            <p>{limitError}</p>
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={() => setLimitError('')}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import GrievanceCard from './GrievanceCard';
 import SearchFilter from './SearchFilter';
@@ -14,6 +14,12 @@ const GrievanceListView = ({ eyebrow, title, description, emptyMessage, submitLi
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [ordering, setOrdering] = useState('-created_at');
+
+  const location = useLocation();
+  const navigate = useNavigate();
+  const submitted = location.state?.submitted;
+
+  const dismissSubmitted = () => navigate(location.pathname, { replace: true });
 
   const loadGrievances = useCallback(async () => {
     setLoading(true);
@@ -57,6 +63,27 @@ const GrievanceListView = ({ eyebrow, title, description, emptyMessage, submitLi
             </Link>
           )}
         </header>
+
+        {submitted && (
+          <div className="modal-backdrop" role="presentation">
+            <div className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="submitted-title">
+              <div className="success-mark">✓</div>
+              <h2 id="submitted-title">Grievance submitted</h2>
+              <p>Your grievance has been recorded. It appears first in your list below.</p>
+              <div className="confirmation-id"><span>Grievance ID</span><strong>GMS-{String(submitted.id).padStart(4, '0')}</strong></div>
+              {submitted.secret_code && (
+                <div className="secret-code">
+                  <span>Anonymous secret code — shown once only</span>
+                  <strong>{submitted.secret_code}</strong>
+                  <small>Copy and save the grievance id and secret code. It is required to track this grievance.</small>
+                </div>
+              )}
+              <div className="modal-actions">
+                <button className="btn btn-primary" onClick={dismissSubmitted}>Done</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showFilters && (
           <SearchFilter

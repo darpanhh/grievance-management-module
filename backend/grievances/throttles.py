@@ -40,7 +40,7 @@ class DailyGrievanceThrottle(SimpleRateThrottle):
         from rest_framework.exceptions import Throttled
         wait = self.wait()
         detail = (
-            f'You have reached the maximum limit of grievances per day. '
-            f'Please try again after midnight.'
+            f'You have reached the daily limit of 3 grievances. '
+            f'Please try again tomorrow.'
         )
         raise Throttled(detail=detail)

@@ -15,6 +15,7 @@ const HodIcon = ({ name }) => {
     pending: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></>,
     underReview: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>,
     escalated: <><path d="M4 17 10 11l4 4 6-7" /><path d="M15 8h5v5" /></>,
+    rejected: <><circle cx="12" cy="12" r="8" /><path d="m9 9 6 6M15 9l-6 6" /></>,
     resolved: <><circle cx="12" cy="12" r="8" /><path d="m8.5 12 2.3 2.3 4.8-5" /></>,
   };
   return <svg className="admin-kpi-icon" viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
@@ -124,10 +125,13 @@ const DepartmentDashboard = () => {
   const monthlyTrend = metrics.monthly_trend || [];
   const trendMax = Math.max(...monthlyTrend.map((item) => item.count), 1);
   const kpis = [
-    { label: 'Total Grievances', value: metrics.total || 0, icon: 'total', tone: 'primary', onClick: showAllGrievances },
+    { label: 'Total', value: metrics.total || 0, icon: 'total', tone: 'primary', onClick: showAllGrievances },
+    { label: 'Submitted', value: statusCounts.SUBMITTED || 0, icon: 'pending', tone: 'primary', onClick: showStatusGrievances('SUBMITTED') },
     { label: 'Under Review', value: underReviewGrievances, icon: 'underReview', tone: 'primary', onClick: showStatusGrievances('UNDER_REVIEW') },
     { label: 'In Progress', value: inProgressGrievances, icon: 'pending', tone: 'primary', onClick: showStatusGrievances('IN_PROGRESS') },
-    { label: 'Resolved Grievances', value: metrics.closed_resolved || 0, icon: 'resolved', tone: 'success', onClick: showResolvedGrievances },
+    { label: 'Resolved', value: metrics.closed_resolved || 0, icon: 'resolved', tone: 'success', onClick: showResolvedGrievances },
+    { label: 'Escalated', value: statusCounts.ESCALATED || 0, icon: 'escalated', tone: 'warning', onClick: showStatusGrievances('ESCALATED') },
+    { label: 'Rejected', value: statusCounts.REJECTED || 0, icon: 'rejected', tone: 'danger', onClick: showStatusGrievances('REJECTED') },
   ];
 
   return (

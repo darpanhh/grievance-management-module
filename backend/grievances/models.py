@@ -220,6 +220,52 @@ class ReopenAttachment(models.Model):
         return f"Reopen Attachment '{self.file_name}' for GMS-{self.grievance.id:04d}"
 
 
+class StatusComment(models.Model):
+    """
+    A reminder comment posted by the submitter (student/staff) when a
+    grievance stays in UNDER_REVIEW or IN_PROGRESS for a long time.
+
+    One comment per status — enforced by the (grievance, status) unique
+    constraint.  The comment nudges the department HOD to act on a stuck
+    grievance.
+    """
+    grievance = models.ForeignKey(
+        Grievance,
+        on_delete=models.CASCADE,
+        related_name='status_comments',
+        help_text="The grievance this reminder comment belongs to."
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='status_comments',
+        help_text="The submitter who posted the reminder comment."
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Grievance.Status.choices,
+        help_text="The grievance status this comment was posted for "
+                  "(UNDER_REVIEW or IN_PROGRESS)."
+    )
+    content = models.TextField(help_text="The reminder comment asking for a status update.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['grievance', 'status'],
+                name='unique_status_comment_per_status',
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"Reminder comment ({self.get_status_display()}) "
+            f"on GMS-{self.grievance.id:04d} by {self.user.username}"
+        )
+
+
 class Request(models.Model):
     """
     Unified Request model handling student appeals (rejection, spam),

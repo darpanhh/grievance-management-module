@@ -10,6 +10,7 @@ SRS Reference: §3.4 (FR-14–FR-18), §4.6 (NFR-26)
 
 import pickle
 import re
+import threading
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -232,3 +233,27 @@ class MLSpamDetector(SpamDetectorInterface):
             'confidence_score': round(confidence_score, 4),
             'classification_reason': reason,
         }
+
+
+# ---------------------------------------------------------------------------
+# Singleton accessor
+# ---------------------------------------------------------------------------
+# The detector is loaded once per process (pickle + NLTK data checks are
+# expensive) and reused for every submission — instantiating it per request
+# added ~100-500ms (or more on a cold NLTK data dir) to every POST.
+
+_detector_instance: MLSpamDetector | None = None
+_detector_lock = threading.Lock()
+
+
+def get_spam_detector() -> MLSpamDetector:
+    """
+    Return the process-wide ``MLSpamDetector`` instance, creating it
+    lazily and thread-safely on first use.
+    """
+    global _detector_instance
+    if _detector_instance is None:
+        with _detector_lock:
+            if _detector_instance is None:
+                _detector_instance = MLSpamDetector()
+    return _detector_instance

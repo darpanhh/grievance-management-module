@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Grievance, AIAnalysis, Response, StatusHistory, Attachment, ReopenAttachment, Request
+from .models import Category, Grievance, AIAnalysis, Response, StatusHistory, Attachment, ReopenAttachment, Request, StatusComment
 
 class AIAnalysisInline(admin.StackedInline):
     model = AIAnalysis
@@ -27,6 +27,12 @@ class RequestInline(admin.TabularInline):
     extra = 0
     readonly_fields = ('created_at', 'resolved_at')
 
+class StatusCommentInline(admin.TabularInline):
+    model = StatusComment
+    extra = 0
+    readonly_fields = ('user', 'status', 'content', 'created_at')
+    can_delete = False
+
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ('name', 'description')
@@ -38,7 +44,7 @@ class GrievanceAdmin(admin.ModelAdmin):
     list_filter = ('current_status', 'is_anonymous', 'category', 'department', 'created_at')
     search_fields = ('id', 'title', 'description', 'secret_code', 'user__username', 'user__email')
     readonly_fields = ('created_at', 'updated_at')
-    inlines = [AIAnalysisInline, AttachmentInline, RequestInline, ResponseInline, StatusHistoryInline]
+    inlines = [AIAnalysisInline, AttachmentInline, RequestInline, StatusCommentInline, ResponseInline, StatusHistoryInline]
 
     def id_formatted(self, obj):
         return f"GMS-{obj.id:04d}"
@@ -68,6 +74,14 @@ class StatusHistoryAdmin(admin.ModelAdmin):
     list_display = ('grievance', 'previous_status', 'new_status', 'action_by', 'created_at')
     list_filter = ('previous_status', 'new_status', 'created_at')
     search_fields = ('grievance__title', 'remarks')
+
+@admin.register(StatusComment)
+class StatusCommentAdmin(admin.ModelAdmin):
+    list_display = ('grievance', 'user', 'status', 'created_at')
+    list_filter = ('status', 'created_at')
+    search_fields = ('grievance__title', 'user__username', 'content')
+    readonly_fields = ('created_at',)
+
 
 @admin.register(Attachment)
 class AttachmentAdmin(admin.ModelAdmin):

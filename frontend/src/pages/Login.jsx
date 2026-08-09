@@ -63,7 +63,7 @@ const Login = () => {
     return (
       <div className="loading-spinner-container">
         <div className="spinner"></div>
-        <p>Checking session...</p>
+        <p>{isSubmitting ? 'Logging in...' : 'Checking session...'}</p>
       </div>
     );
   }
@@ -76,7 +76,7 @@ const Login = () => {
             <img src={logo} alt="IOE Pulchowk Logo" className="auth-logo" />
           </Link>
           <h2>IOE Pulchowk Login</h2>
-          <p>Sign in with your Pulchowk Campus account credentials</p>
+          <p>Login with your Pulchowk Campus account credentials</p>
         </div>
 
         {errorMessage && (

@@ -10,6 +10,7 @@ from .models import (
     ReopenAttachment,
     Request,
     Response,
+    StatusComment,
     StatusHistory,
 )
 
@@ -139,7 +140,10 @@ class GrievanceListSerializer(serializers.ModelSerializer):
 
     def get_attachment_count(self, obj):
         """Return the number of attachments (avoids prefetch overhead in listings)."""
-        return getattr(obj, '_attachment_count', None) or obj.attachments.count()
+        annotated = getattr(obj, '_attachment_count', None)
+        if annotated is not None:
+            return annotated
+        return obj.attachments.count()
 
     def get_days_since_update(self, obj):
         """Return the number of days since the last update."""
@@ -318,6 +322,23 @@ class RequestSerializer(serializers.ModelSerializer):
         return None
 
 
+class StatusCommentSerializer(serializers.ModelSerializer):
+    """Serializer for the submitter's reminder comment on a stuck grievance."""
+
+    user_name = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = StatusComment
+        fields = ['id', 'grievance', 'user', 'user_name', 'status', 'status_display', 'content', 'created_at']
+        read_only_fields = ['id', 'grievance', 'user', 'user_name', 'status', 'status_display', 'created_at']
+
+    def get_user_name(self, obj):
+        if obj.grievance.is_anonymous:
+            return 'Anonymous'
+        return obj.user.get_full_name() or obj.user.username
+
+
 class GrievanceDetailSerializer(serializers.ModelSerializer):
     """
     Full-detail serializer for a single grievance.
@@ -338,6 +359,7 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
     attachments = AttachmentSerializer(many=True, read_only=True)
     reopen_attachments = ReopenAttachmentSerializer(many=True, read_only=True)
     requests = RequestSerializer(many=True, read_only=True)
+    status_comments = StatusCommentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Grievance
@@ -347,7 +369,8 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
             'is_anonymous', 'is_sensitive', 'is_reopened', 'escalation_level',
             'escalated_to_name', 'submitter', 'submitter_name',
             'responses', 'status_history', 'ai_analysis', 'attachments',
-            'reopen_attachments', 'requests', 'created_at', 'updated_at',
+            'reopen_attachments', 'requests', 'status_comments',
+            'created_at', 'updated_at',
         ]
         read_only_fields = fields
 

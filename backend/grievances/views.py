@@ -14,10 +14,8 @@ Phase 5: Grievance Routing
 import logging
 from datetime import date
 
-from django.conf import settings
 from django.contrib.auth.hashers import check_password
-from django.core.mail import send_mail
-from django.db.models import Count
+from django.db.models import Count, OuterRef, Subquery
 from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -31,7 +29,7 @@ from rest_framework.response import Response
 logger = logging.getLogger(__name__)
 
 from accounts.models import Department
-from .models import AIAnalysis, Category, Grievance, Request, StatusHistory
+from .models import AIAnalysis, Attachment, Category, Grievance, Request, StatusComment, StatusHistory
 from .permissions import IsCampusAdmin
 from .serializers import (
     AIAnalysisSerializer,
@@ -42,10 +40,13 @@ from .serializers import (
     GrievanceListSerializer,
     GrievanceTrackSerializer,
     RequestSerializer,
+    StatusCommentSerializer,
 )
-from .services.spam_detector import MLSpamDetector
+from .services.spam_detector import get_spam_detector
 from .services.routing import route_grievance
 from .services.escalation_service import (
+    send_comment_notification_email,
+    send_email_async,
     send_submission_email,
     send_response_email,
     send_resolution_email,
@@ -56,6 +57,21 @@ from .services.escalation_service import (
 # ---------------------------------------------------------------------------
 # Reference endpoints (public)
 # ---------------------------------------------------------------------------
+
+
+def _with_attachment_count(qs):
+    """
+    Annotate *qs* with ``_attachment_count`` (number of attachments per
+    grievance) via a single subquery, avoiding one COUNT query per row
+    in list views.  The list serializer reads the annotation when present.
+    """
+    attachment_counts = Attachment.objects.filter(
+        grievance_id=OuterRef('pk'),
+    ).values('grievance_id').annotate(
+        count=Count('id'),
+    ).values('count')
+    return qs.annotate(_attachment_count=Subquery(attachment_counts))
+
 
 class CategoryListView(generics.ListAPIView):
     """
@@ -134,7 +150,7 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
             qs = qs.filter(department=user.department)
         # CAMPUS_ADMIN sees everything — no additional filter
 
-        return qs.order_by('-created_at')
+        return _with_attachment_count(qs).order_by('-created_at')
 
     def filter_queryset(self, queryset):
         """
@@ -199,8 +215,8 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
         if count >= 3:
             raise Throttled(
                 detail=(
-                    'You have reached the maximum limit of 3 grievances '
-                    'per day. Please try again after midnight.'
+                    'You have reached the daily limit of 3 grievances. '
+                    'Please try again tomorrow.'
                 )
             )
 
@@ -230,7 +246,7 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
         # ------------------------------------------------------------------
         # Phase 4 — AI Spam Detection
         # ------------------------------------------------------------------
-        detector = MLSpamDetector()
+        detector = get_spam_detector()
         result = detector.analyze(grievance.description)
 
         # Persist the AI analysis record
@@ -833,26 +849,89 @@ def reopen_grievance(request, pk):
         hod = grievance.department.users.filter(role='HOD').first()
         if hod and hod.email:
             submitter = grievance.user.get_full_name() or grievance.user.username if not grievance.is_anonymous else 'Anonymous'
-            try:
-                send_mail(
-                    f"[GMS] Grievance Reopened — GMS-{grievance.id:04d}: {grievance.title}",
-                    f"Dear {hod.get_full_name() or hod.username},\n\n"
-                    f"A student has reopened a grievance in your department.\n\n"
-                    f"Grievance: GMS-{grievance.id:04d}\n"
-                    f"Title: {grievance.title}\n"
-                    f"Reopened by: {submitter}\n"
-                    f"Reason: {user_note or 'No reason provided'}\n\n"
-                    f"Please log in to respond.\n\n"
-                    f"Regards,\nGrievance Management System",
-                    settings.DEFAULT_FROM_EMAIL,
-                    [hod.email],
-                    fail_silently=False,
-                )
-            except Exception as exc:
-                logger.error('Failed to send reopen notification for GMS-%04d: %s', grievance.id, exc)
+            send_email_async(
+                f"[GMS] Grievance Reopened — GMS-{grievance.id:04d}: {grievance.title}",
+                f"Dear {hod.get_full_name() or hod.username},\n\n"
+                f"A student has reopened a grievance in your department.\n\n"
+                f"Grievance: GMS-{grievance.id:04d}\n"
+                f"Title: {grievance.title}\n"
+                f"Reopened by: {submitter}\n"
+                f"Reason: {user_note or 'No reason provided'}\n\n"
+                f"Please log in to respond.\n\n"
+                f"Regards,\nGrievance Management System",
+                [hod.email],
+            )
 
     detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
     return Response(detail, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def post_status_comment(request, pk):
+    """
+    POST /api/grievances/{pk}/comment/
+
+    Lets the original submitter post a reminder comment when their grievance
+    has been stuck in SUBMITTED, UNDER_REVIEW, IN_PROGRESS, or REOPENED for
+    a long time.
+
+    The comment nudges the department HOD (email notification) and is limited
+    to one comment per status — enforced by the (grievance, status) unique
+    constraint.  So a grievance can hold one comment for each of those statuses.
+    """
+    grievance = get_object_or_404(Grievance, pk=pk)
+
+    if grievance.user != request.user:
+        raise PermissionDenied('You can only comment on your own grievance.')
+
+    if grievance.current_status not in (
+        Grievance.Status.SUBMITTED,
+        Grievance.Status.UNDER_REVIEW,
+        Grievance.Status.IN_PROGRESS,
+        Grievance.Status.REOPENED,
+    ):
+        return Response(
+            {'error': 'Comments are only allowed when the status is SUBMITTED, UNDER_REVIEW, IN_PROGRESS, or REOPENED.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if StatusComment.objects.filter(
+        grievance=grievance,
+        status=grievance.current_status,
+    ).exists():
+        return Response(
+            {'error': 'You have already posted a comment for this status. Only one comment is allowed per status.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    content = (request.data.get('content') or '').strip()
+    if not content:
+        return Response(
+            {'error': 'Comment content is required.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if len(content) > 2000:
+        return Response(
+            {'error': 'Comment must not exceed 2000 characters.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    comment = StatusComment.objects.create(
+        grievance=grievance,
+        user=request.user,
+        status=grievance.current_status,
+        content=content,
+    )
+
+    # Bump updated_at so the inactivity-escalation clock reflects the activity
+    grievance.save(update_fields=['updated_at'])
+
+    # Notify the department HOD (async, non-blocking)
+    send_comment_notification_email(grievance, content)
+
+    serializer = StatusCommentSerializer(comment, context={'request': request})
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])
@@ -961,10 +1040,12 @@ class StudentDashboardView(generics.GenericAPIView):
 
     def get(self, request, *args, **kwargs):
         user = request.user
-        grievances_qs = Grievance.objects.filter(
-            user=user,
-        ).select_related(
-            'category', 'department',
+        grievances_qs = _with_attachment_count(
+            Grievance.objects.filter(
+                user=user,
+            ).select_related(
+                'category', 'department',
+            )
         ).order_by('-created_at')
 
         total = grievances_qs.count()
@@ -1021,10 +1102,12 @@ class DepartmentDashboardView(generics.GenericAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        grievances_qs = Grievance.objects.filter(
-            department=dept,
-        ).select_related(
-            'category', 'department', 'user',
+        grievances_qs = _with_attachment_count(
+            Grievance.objects.filter(
+                department=dept,
+            ).select_related(
+                'category', 'department', 'user',
+            )
         ).order_by('-created_at')
 
         total = grievances_qs.count()
@@ -1157,7 +1240,9 @@ class AdminDashboardView(generics.GenericAPIView):
                 'count': monthly_counts.get(month.strftime('%Y-%m'), 0),
             })
 
-        recent = qs.select_related('category', 'department', 'user').order_by('-updated_at')[:10]
+        recent = _with_attachment_count(
+            Grievance.objects.select_related('category', 'department', 'user')
+        ).order_by('-updated_at')[:10]
         recent_data = GrievanceListSerializer(recent, many=True, context={'request': request}).data
 
         return Response({

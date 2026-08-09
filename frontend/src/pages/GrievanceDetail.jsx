@@ -4,6 +4,7 @@ import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import StatusBadge from '../components/StatusBadge';
 import RequestModal from '../components/RequestModal';
+import ReminderComment from '../components/ReminderComment';
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(date)) : '—';
 const statusLabel = (status) => status ? status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Initial submission';
@@ -173,7 +174,6 @@ const GrievanceDetail = () => {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
           {backLabel}
         </Link>
-        {toast && <div className="workflow-toast success" role="status">{toast}<button aria-label="Dismiss success message" onClick={() => setToast('')}>×</button></div>}
         {error && <div className="workflow-toast error" role="alert">{error}<button aria-label="Dismiss error message" onClick={() => setError('')}>×</button></div>}
 
         
@@ -232,7 +232,7 @@ const GrievanceDetail = () => {
                       <div className="attachment-row">
                         <span>
                           <strong>{attachment.file_name}</strong>
-                          <small>{attachment.file_type || 'Attachment'} · uploaded {formatDate(attachment.uploaded_at)}</small>
+                          <small>uploaded {formatDate(attachment.uploaded_at)}</small>
                         </span>
                         <div className="attachment-actions">
                           {attachment.file && canPreviewAttachment(attachment) && (
@@ -252,7 +252,7 @@ const GrievanceDetail = () => {
             <section className="detail-section">
               <h2 className="section-title">
                 <span className="section-title-accent" />
-                Student Appeals & Reopen Requests
+                Student Reopen Requests
               </h2>
               <div className="request-audit-list">
                 {grievance.requests.filter(r => r.request_type !== 'ESCALATION').map((req) => (
@@ -270,7 +270,7 @@ const GrievanceDetail = () => {
                               <div className="attachment-row">
                                 <span>
                                   <strong>{attachment.file_name}</strong>
-                                  <small>{attachment.file_type || 'Attachment'} · uploaded {formatDate(attachment.uploaded_at)}</small>
+                                  <small>uploaded {formatDate(attachment.uploaded_at)}</small>
                                 </span>
                                 <div className="attachment-actions">
                                   {attachment.file && canPreviewAttachment(attachment) && (
@@ -310,6 +310,16 @@ const GrievanceDetail = () => {
               </div>
             </section>
           )}
+
+          {/* Submitter Reminder Comment — whole feature via shared component */}
+          <ReminderComment
+            grievance={grievance}
+            isSubmitter={isSubmitter}
+            onCommented={() => {
+              setToast('Your reminder comment was posted. The department has been notified.');
+              loadGrievance(false);
+            }}
+          />
 
           <section className="detail-section">
             <h2 className="section-title">
@@ -521,6 +531,20 @@ const GrievanceDetail = () => {
               {previewAttachments.length > 1 && (
                 <span className="preview-counter">{previewIndex + 1} / {previewAttachments.length}</span>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Success popup after status updates / grievance actions */}
+        {toast && (
+          <div className="modal-backdrop" role="presentation">
+            <div className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="action-success-title">
+              <div className="success-mark">✓</div>
+              <h2 id="action-success-title">Success</h2>
+              <p>{toast}</p>
+              <div className="modal-actions">
+                <button className="btn btn-primary" onClick={() => setToast('')}>OK</button>
+              </div>
             </div>
           </div>
         )}

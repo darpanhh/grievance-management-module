@@ -46,6 +46,17 @@ class RegisterSerializer(serializers.ModelSerializer):
             'first_name', 'last_name', 'role', 'department', 'contact_number',
         ]
 
+    def validate_contact_number(self, value):
+        """Contact number must be exactly 10 digits."""
+        value = (value or '').strip()
+        if not value:
+            raise serializers.ValidationError('Contact number is required.')
+        if not value.isdigit():
+            raise serializers.ValidationError('Contact number must contain only digits (0-9).')
+        if len(value) != 10:
+            raise serializers.ValidationError('Contact number must be exactly 10 digits.')
+        return value
+
     def validate(self, attrs):
         if attrs['password'] != attrs.pop('password2'):
             raise serializers.ValidationError({'password': 'Passwords do not match.'})
