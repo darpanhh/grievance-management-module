@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import StatusBadge from '../components/StatusBadge';
 import RequestModal from '../components/RequestModal';
-import ReminderComment from '../components/ReminderComment';
+import { ReminderCommentList, ReminderCommentForm } from '../components/ReminderComment';
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(date)) : '—';
 const statusLabel = (status) => status ? status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Initial submission';
@@ -25,6 +25,7 @@ const previewKindFromUrl = (url) => {
 const GrievanceDetail = () => {
   const { id } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const backTo = location.state?.backTo || '/dashboard';
   const backLabel = location.state?.backLabel || 'Back to grievances';
@@ -38,7 +39,7 @@ const GrievanceDetail = () => {
   const [revealSensitive, setRevealSensitive] = useState(false);
   const [content, setContent] = useState('');
   const [escalateReason, setEscalateReason] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('IN_PROGRESS');
+  const [selectedStatus, setSelectedStatus] = useState('UNDER_REVIEW');
   const [submitting, setSubmitting] = useState(false);
 
   const loadGrievance = useCallback(async (showLoading = true) => {
@@ -75,8 +76,8 @@ const GrievanceDetail = () => {
     return () => window.removeEventListener('keydown', handler);
   }, [previewAttachment, previewIndex]);
 
-  const closeModal = () => { setModal(null); setContent(''); setEscalateReason(''); setSelectedStatus('IN_PROGRESS'); };
-  const openModal = (action) => { setToast(''); setContent(''); setEscalateReason(''); setSelectedStatus('IN_PROGRESS'); setModal(action); };
+  const closeModal = () => { setModal(null); setContent(''); setEscalateReason(''); setSelectedStatus('UNDER_REVIEW'); };
+  const openModal = (action) => { setToast(''); setContent(''); setEscalateReason(''); setSelectedStatus('UNDER_REVIEW'); setModal(action); };
 
   const actionError = (requestError) => {
     const data = requestError.response?.data;
@@ -170,26 +171,108 @@ const GrievanceDetail = () => {
   return (
     <section className="dashboard-page">
       <div className="dashboard-container detail-page-container">
-        <Link className="back-link" to={backTo}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
-          {backLabel}
-        </Link>
+        {!needsSensitiveGate && (
+          <Link className="back-link" to={backTo}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
+            {backLabel}
+          </Link>
+        )}
         {error && <div className="workflow-toast error" role="alert">{error}<button aria-label="Dismiss error message" onClick={() => setError('')}>×</button></div>}
 
         
 
         {needsSensitiveGate ? (
-          <div className="sensitive-gate-overlay" role="alertdialog" aria-modal="true" aria-labelledby="sensitive-gate-title">
-            <div className="sensitive-gate-modal">
-              <div className="sensitive-gate-icon">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-              </div>
-              <h2 id="sensitive-gate-title">Sensitive Grievance</h2>
-              <p>The student has marked this grievance as sensitive. It may contain confidential, personal, or otherwise sensitive information. Please ensure that you are authorized to access and handle this information confidentially.</p>
-              <p className="sensitive-gate-confirm">Are you sure you want to view the sensitive content?</p>
-              <div className="sensitive-gate-actions">
-                <button className="btn btn-outline" onClick={() => setRevealSensitive(false)}>Cancel</button>
-                <button className="btn btn-warning" onClick={() => setRevealSensitive(true)}>View Sensitive Content</button>
+          <div className="sensitive-gate-blur-wrapper">
+            <article className="grievance-detail sensitive-blurred">
+              <header className="detail-header">
+                <div className="detail-header-top">
+                  <StatusBadge status={status} />
+                </div>
+                <h1>{grievance.title}</h1>
+                <div className="detail-subtext">
+                  <span><strong>Assigned Department:</strong> {grievance.department_name || 'Not assigned'}</span>
+                  <span className="dot">•</span>
+                  <span><strong>Category:</strong> {grievance.category_name || 'Uncategorized'}</span>
+                  <span className="dot">•</span>
+                  <span>Submitted by: <strong>{grievance.is_anonymous ? 'Anonymous' : grievance.submitter_name || 'Not available'}</strong></span>
+                  <span className="dot">•<time>{formatDate(grievance.created_at)}</time></span>
+                </div>
+              </header>
+              <section className="detail-section">
+                <h2 className="section-title"><span className="section-title-accent" />Grievance Description</h2>
+                <p className="detail-description">{grievance.description}</p>
+              </section>
+              <section className="detail-section">
+                <h2 className="section-title"><span className="section-title-accent" />Attachments ({grievance.attachments?.length || 0})</h2>
+                {grievance.attachments?.length ? (
+                  <ul className="attachment-list">
+                    {grievance.attachments.map((attachment) => (
+                      <li key={attachment.id}>
+                        <div className="attachment-row">
+                          <span><strong>{attachment.file_name}</strong><small>uploaded {formatDate(attachment.uploaded_at)}</small></span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="empty-note">No files were attached to this grievance.</p>}
+              </section>
+              <section className="detail-section">
+                <h2 className="section-title"><span className="section-title-accent" />Official Responses</h2>
+                {grievance.responses?.length ? (
+                  <div className="response-list">
+                    {[...grievance.responses].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((response) => (
+                      <article key={response.id} className="response-card">
+                        <header><strong>{responderLabel(response)}</strong><time>{formatDate(response.created_at)}</time></header>
+                        <p>{response.content}</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : <p className="empty-note">No official response has been posted yet.</p>}
+              </section>
+              <section className="detail-section">
+                <h2 className="section-title"><span className="section-title-accent" />Status History & Audit Trail</h2>
+                {grievance.status_history?.length ? (
+                  <div className="audit-timeline">
+                    {grievance.status_history.map((entry, index) => (
+                      <div key={entry.id || index} className="timeline-item">
+                        <div className="timeline-marker-col">
+                          <span className="timeline-marker-dot" />
+                          {index < grievance.status_history.length - 1 && <span className="timeline-line" />}
+                        </div>
+                        <div className="timeline-card">
+                          <div className="timeline-card-header">
+                            <div className="timeline-transition">
+                              <span className="from-status-tag">{statusLabel(entry.previous_status)}</span>
+                              <svg className="transition-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                              <StatusBadge status={entry.new_status} />
+                            </div>
+                            <time className="timeline-timestamp">{formatDate(entry.created_at)}</time>
+                          </div>
+                          <div className="timeline-actor-row">
+                            <span className="actor-badge">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                              Action by <strong>{entry.action_by_name || 'System'}</strong>
+                            </span>
+                          </div>
+                          {entry.remarks && <div className="timeline-remarks-box"><p>{entry.remarks}</p></div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="empty-note">No status history available.</p>}
+              </section>
+            </article>
+            <div className="sensitive-gate-overlay">
+              <div className="sensitive-gate-modal">
+                <div className="sensitive-gate-icon">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                </div>
+                <h2 id="sensitive-gate-title">Sensitive Grievance</h2>
+                <p>This grievance contains confidential or sensitive information. Please ensure you are authorized to access this content.</p>
+                <div className="sensitive-gate-actions">
+                  <button className="btn btn-outline" onClick={() => navigate(backTo)}>Go Back</button>
+                  <button className="btn btn-warning" onClick={() => setRevealSensitive(true)}>Reveal Content</button>
+                </div>
               </div>
             </div>
           </div>
@@ -201,7 +284,7 @@ const GrievanceDetail = () => {
             </div>
             <h1>{grievance.title}</h1>
             <div className="detail-subtext">
-              <span><strong>Assigned Dept:</strong> {grievance.department_name || 'Not assigned'}</span>
+              <span><strong>Assigned Department:</strong> {grievance.department_name || 'Not assigned'}</span>
               <span className="dot">•</span>
               <span><strong>Category:</strong> {grievance.category_name || 'Uncategorized'}</span>
               <span className="dot">•</span>
@@ -311,15 +394,7 @@ const GrievanceDetail = () => {
             </section>
           )}
 
-          {/* Submitter Reminder Comment — whole feature via shared component */}
-          <ReminderComment
-            grievance={grievance}
-            isSubmitter={isSubmitter}
-            onCommented={() => {
-              setToast('Your reminder comment was posted. The department has been notified.');
-              loadGrievance(false);
-            }}
-          />
+          <ReminderCommentList grievance={grievance} />
 
           <section className="detail-section">
             <h2 className="section-title">
@@ -380,6 +455,16 @@ const GrievanceDetail = () => {
               </div>
             ) : <p className="empty-note">No status history available.</p>}
           </section>
+
+          {/* Reminder Comment Form — appears at end for submitter to post */}
+          <ReminderCommentForm
+            grievance={grievance}
+            isSubmitter={isSubmitter}
+            onCommented={() => {
+              setToast('Your reminder comment was posted. The department has been notified.');
+              loadGrievance(false);
+            }}
+          />
 
           {/* Bottom Grievance Controls & Actions */}
 

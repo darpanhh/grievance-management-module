@@ -7,7 +7,36 @@ const statusLabel = (status) => status ? status.replace(/_/g, ' ').toLowerCase()
 const POSTABLE_STATUSES = ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'];
 const MAX_LENGTH = 2000;
 
-const ReminderComment = ({ grievance, isSubmitter, canPost = true, onCommented }) => {
+const ReminderCommentList = ({ grievance }) => {
+  const comments = grievance.status_comments || [];
+
+  if (!comments.length) return null;
+
+  return (
+    <section className="detail-section">
+      <h2 className="section-title">
+        <span className="section-title-accent" />
+        Reminder Comments
+      </h2>
+      <div className="status-comment-list">
+        {comments.map((comment) => (
+          <article key={comment.id} className="status-comment-card">
+            <header className="status-comment-header">
+              <span className="status-comment-tag">{comment.status_display || statusLabel(comment.status)}</span>
+            </header>
+            <p>{comment.content}</p>
+            <div className="request-audit-meta">
+              <span>{comment.user_name || (grievance.is_anonymous ? 'Anonymous' : 'Submitter')}</span>
+              <span>Posted {formatDate(comment.created_at)}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+const ReminderCommentForm = ({ grievance, isSubmitter, canPost = true, onCommented }) => {
   const [content, setContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -42,68 +71,39 @@ const ReminderComment = ({ grievance, isSubmitter, canPost = true, onCommented }
     }
   };
 
+  if (!showForm) {
+    return null;
+  }
+
   return (
     <section className="detail-section">
-      <h2 className="section-title">
-        <span className="section-title-accent" />
-        Reminder Comments
-      </h2>
-      {comments.length ? (
-        <div className="status-comment-list">
-          {comments.map((comment) => (
-            <article key={comment.id} className="status-comment-card">
-              <header className="status-comment-header">
-                <span className="status-comment-tag">{comment.status_display || statusLabel(comment.status)}</span>
-              </header>
-              <p>{comment.content}</p>
-              <div className="request-audit-meta">
-                <span>{comment.user_name || (grievance.is_anonymous ? 'Anonymous' : 'Submitter')}</span>
-                <span>Posted {formatDate(comment.created_at)}</span>
-              </div>
-            </article>
-          ))}
+      <form className="status-comment-form" onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label htmlFor="status-comment-content">
+            Remind the department <small>(one comment per status)</small>
+          </label>
+          <textarea
+            id="status-comment-content"
+            value={content}
+            onChange={(e) => {
+              setContent(e.target.value.slice(0, MAX_LENGTH));
+              if (error) setError('');
+            }}
+            placeholder={`Write a short reminder asking for an update on this ${statusLabel(status).toLowerCase()} grievance...`}
+            rows="3"
+            maxLength={MAX_LENGTH}
+            required
+          />
+          {error && <div className="workflow-toast error">{error}</div>}
         </div>
-      ) : (
-        <p className="empty-note">
-          No reminder comments yet. A reminder nudges the department when your grievance is stuck.
-        </p>
-      )}
-
-      {showForm && (
-        <form className="status-comment-form" onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="status-comment-content">
-              Remind the department <small>(one comment per status)</small>
-            </label>
-            <textarea
-              id="status-comment-content"
-              value={content}
-              onChange={(e) => {
-                setContent(e.target.value.slice(0, MAX_LENGTH));
-                if (error) setError('');
-              }}
-              placeholder={`Write a short reminder asking for an update on this ${statusLabel(status).toLowerCase()} grievance...`}
-              rows="3"
-              maxLength={MAX_LENGTH}
-              required
-            />
-            {error && <div className="workflow-toast error">{error}</div>}
-          </div>
-          <div className="modal-actions">
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
-              {submitting ? 'Posting...' : 'Post Reminder'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {canPost && isSubmitter && POSTABLE_STATUSES.includes(status) && alreadyPosted && (
-        <p className="empty-note">
-          You have already posted a reminder for the {statusLabel(status).toLowerCase()} status of this grievance.
-        </p>
-      )}
+        <div className="modal-actions">
+          <button type="submit" className="btn btn-primary" disabled={submitting}>
+            {submitting ? 'Posting...' : 'Post Reminder'}
+          </button>
+        </div>
+      </form>
     </section>
   );
 };
 
-export default ReminderComment;
+export { ReminderCommentList, ReminderCommentForm };

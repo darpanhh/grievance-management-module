@@ -4943,7 +4943,7 @@
   padding: clamp(1.15rem, 3.5vw, 2.25rem);
   border: 1px solid rgba(226, 232, 240, .95);
   border-radius: 24px;
-  background: rgba(255, 255, 255, .9);
+  background: #fff;
   box-shadow: 0 24px 50px -30px rgba(30, 41, 59, .28);
 }
 
@@ -4962,7 +4962,7 @@
   width: 180px;
   height: 125px;
   border-radius: 24px 0 110px 0;
-  background: radial-gradient(circle at top left, rgba(99, 102, 241, .12), transparent 68%);
+  background: transparent;
   pointer-events: none;
 }
 
@@ -10232,25 +10232,45 @@
 
 /* ── Sensitive Grievance Gate ─────────────────────────────── */
 
+.sensitive-gate-blur-wrapper {
+  position: relative;
+  min-height: 100%;
+}
+
+.sensitive-blurred {
+  filter: blur(12px);
+  pointer-events: none;
+  user-select: none;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
 .sensitive-gate-overlay {
   position: fixed;
-  z-index: 2000;
-  inset: 0;
-  background: rgba(15, 23, 42, .6);
-  display: grid;
-  place-items: center;
-  padding: 1.5rem;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  z-index: 1000;
 }
 
 .sensitive-gate-modal {
-  background: #fff;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid #fbbf24;
   border-radius: var(--radius-md);
   padding: 2.5rem 2rem;
-  max-width: 520px;
+  max-width: 420px;
   width: 100%;
   text-align: center;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+  box-shadow: 0 20px 60px rgba(217, 119, 6, 0.15);
   animation: modalFadeIn .2s ease;
+  margin: auto;
 }
 
 .sensitive-gate-icon {

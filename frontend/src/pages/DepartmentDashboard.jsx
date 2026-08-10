@@ -247,9 +247,9 @@ const DepartmentDashboard = () => {
                 <div className="hod-card-actions">
                   <Link
                     to={`/grievances/${grievance.id}`}
-                    className={`btn ${activeTab === 'ACTION_REQUIRED' && ['UNDER_REVIEW', 'REOPENED'].includes(grievance.current_status) ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                    className={`btn ${activeTab === 'ACTION_REQUIRED' ? 'btn-primary' : 'btn-outline'} btn-sm`}
                   >
-                    {activeTab === 'ACTION_REQUIRED' && ['UNDER_REVIEW', 'REOPENED'].includes(grievance.current_status) ? 'Review & Update Status' : 'View Full Details'}
+                    {activeTab === 'ACTION_REQUIRED' ? 'Review & Update Status' : 'View Full Details'}
                   </Link>
                 </div>
               </article>

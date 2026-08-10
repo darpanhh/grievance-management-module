@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import api from '../services/api';
 import StatusBadge from '../components/StatusBadge';
-import ReminderComment from '../components/ReminderComment';
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(date)) : '—';
 const statusLabel = (status) => status ? status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Initial submission';
@@ -36,7 +35,7 @@ const TrackGrievance = () => {
   return (
     <section className="track-page-redesign">
       <div className="track-hero">
-        <div><h1>Track a grievance</h1><p>Enter the Grievance ID and Secret Code you received when submitting your concern.</p></div>
+        <div><h1>Track anonymous grievance</h1><p>Enter the Grievance ID and Secret Code you received when submitting your concern.</p></div>
       </div>
 
       {!grievance && (
@@ -59,10 +58,6 @@ const TrackGrievance = () => {
           <h1>{grievance.title}</h1>
           <StatusBadge status={grievance.current_status} />
         </header>
-
-        {/* Reminder Comments — same shared component as the detail page;
-            display-only here (anonymous tracking, no posting) */}
-        <ReminderComment grievance={grievance} isSubmitter={false} canPost={false} />
 
         <section className="detail-section">
           <h2 className="section-title"><span className="section-title-accent" />Official Responses</h2>
