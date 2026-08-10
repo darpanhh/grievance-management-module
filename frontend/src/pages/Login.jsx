@@ -129,7 +129,7 @@ const Login = () => {
                 Signing In...
               </>
             ) : (
-              'Sign In to Portal'
+              'Login'
             )}
           </button>
         </form>

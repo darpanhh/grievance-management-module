@@ -14,7 +14,7 @@ const GrievanceCard = ({ grievance }) => (
 
     <div className="grievance-card-meta">
       <div className="meta-item">
-        <span className="meta-label">Assigned Department</span>
+        <span className="meta-label">Department</span>
         <span className="meta-value">{grievance.department_name || 'Not assigned'}</span>
       </div>
       <div className="meta-item">
