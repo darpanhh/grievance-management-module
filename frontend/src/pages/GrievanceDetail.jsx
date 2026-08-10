@@ -179,7 +179,7 @@ const GrievanceDetail = () => {
         )}
         {error && <div className="workflow-toast error" role="alert">{error}<button aria-label="Dismiss error message" onClick={() => setError('')}>×</button></div>}
 
-        
+
 
         {needsSensitiveGate ? (
           <div className="sensitive-gate-blur-wrapper">
@@ -190,12 +190,13 @@ const GrievanceDetail = () => {
                 </div>
                 <h1>{grievance.title}</h1>
                 <div className="detail-subtext">
-                  <span><strong>Assigned Department:</strong> {grievance.department_name || 'Not assigned'}</span>
+                  <span><strong>Department:</strong> {grievance.department_name || 'Not assigned'}</span>
                   <span className="dot">•</span>
                   <span><strong>Category:</strong> {grievance.category_name || 'Uncategorized'}</span>
                   <span className="dot">•</span>
                   <span>Submitted by: <strong>{grievance.is_anonymous ? 'Anonymous' : grievance.submitter_name || 'Not available'}</strong></span>
-                  <span className="dot">•<time>{formatDate(grievance.created_at)}</time></span>
+                  <span className="dot">•</span>
+                  <span>Submitted on: <time>{formatDate(grievance.created_at)}</time></span>
                 </div>
               </header>
               <section className="detail-section">
@@ -243,14 +244,14 @@ const GrievanceDetail = () => {
                           <div className="timeline-card-header">
                             <div className="timeline-transition">
                               <span className="from-status-tag">{statusLabel(entry.previous_status)}</span>
-                              <svg className="transition-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                              <svg className="transition-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
                               <StatusBadge status={entry.new_status} />
                             </div>
                             <time className="timeline-timestamp">{formatDate(entry.created_at)}</time>
                           </div>
                           <div className="timeline-actor-row">
                             <span className="actor-badge">
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                               Action by <strong>{entry.action_by_name || 'System'}</strong>
                             </span>
                           </div>
@@ -277,40 +278,39 @@ const GrievanceDetail = () => {
             </div>
           </div>
         ) : (
-        <article className="grievance-detail">
-          <header className="detail-header">
-            <div className="detail-header-top">
-              <StatusBadge status={status} />
-            </div>
-            <h1>{grievance.title}</h1>
-            <div className="detail-subtext">
-              <span><strong>Assigned Department:</strong> {grievance.department_name || 'Not assigned'}</span>
-              <span className="dot">•</span>
-              <span><strong>Category:</strong> {grievance.category_name || 'Uncategorized'}</span>
-              <span className="dot">•</span>
-              <span>Submitted by: <strong>{grievance.is_anonymous ? 'Anonymous' : grievance.submitter_name || 'Not available'}</strong></span>
-        
-              <span className="dot">•<time>{formatDate(grievance.created_at)}</time></span>
-              
-            </div>
-          </header>
+          <article className="grievance-detail">
+            <header className="detail-header">
+              <div className="detail-header-top">
+                <StatusBadge status={status} />
+              </div>
+              <h1>{grievance.title}</h1>
+              <div className="detail-subtext">
+                <span><strong>Department:</strong> {grievance.department_name || 'Not assigned'}</span>
+                <span className="dot">•</span>
+                <span><strong>Category:</strong> {grievance.category_name || 'Uncategorized'}</span>
+                <span className="dot">•</span>
+                <span><strong>Submitted by:</strong> {grievance.is_anonymous ? 'Anonymous' : grievance.submitter_name || 'Not available'}</span>
+                <span><strong>Submitted on:</strong> <time>{formatDate(grievance.created_at)}</time></span>
 
-          <section className="detail-section">
-            <h2 className="section-title">
-              <span className="section-title-accent" />
-              Grievance Description
-            </h2>
-            <p className="detail-description">{grievance.description}</p>
-          </section>
+              </div>
+            </header>
 
-          <section className="detail-section">
-            <h2 className="section-title">
-              <span className="section-title-accent" />
-              Attachments ({grievance.attachments?.length || 0})
-            </h2>
-            {grievance.attachments?.length ? (
-              <ul className="attachment-list">
-                {grievance.attachments.map((attachment) => (
+            <section className="detail-section">
+              <h2 className="section-title">
+                <span className="section-title-accent" />
+                Grievance Description
+              </h2>
+              <p className="detail-description">{grievance.description}</p>
+            </section>
+
+            <section className="detail-section">
+              <h2 className="section-title">
+                <span className="section-title-accent" />
+                Attachments ({grievance.attachments?.length || 0})
+              </h2>
+              {grievance.attachments?.length ? (
+                <ul className="attachment-list">
+                  {grievance.attachments.map((attachment) => (
                     <li key={attachment.id}>
                       <div className="attachment-row">
                         <span>
@@ -325,210 +325,210 @@ const GrievanceDetail = () => {
                       </div>
                     </li>
                   ))
-                }
-              </ul>
-            ) : <p className="empty-note">No files were attached to this grievance.</p>}
-          </section>
+                  }
+                </ul>
+              ) : <p className="empty-note">No files were attached to this grievance.</p>}
+            </section>
 
-          {/* Student Requests & Appeals Audit History */}
-          {grievance.requests?.filter(r => r.request_type !== 'ESCALATION').length > 0 && (
+            {/* Student Requests & Appeals Audit History */}
+            {grievance.requests?.filter(r => r.request_type !== 'ESCALATION').length > 0 && (
+              <section className="detail-section">
+                <h2 className="section-title">
+                  <span className="section-title-accent" />
+                  Student Reopen Requests
+                </h2>
+                <div className="request-audit-list">
+                  {grievance.requests.filter(r => r.request_type !== 'ESCALATION').map((req) => (
+                    <article key={req.id} className="request-audit-card">
+                      <div className="request-audit-header">
+                        <strong>{req.request_type_display}</strong>
+                      </div>
+                      <p className="request-audit-reason"><strong>Reason:</strong> "{req.reason}"</p>
+                      {req.request_type === 'REOPEN' && grievance.reopen_attachments?.length > 0 && (
+                        <div className="reopen-docs-in-card">
+                          <h3 className="reopen-docs-subtitle">Supporting Documents ({grievance.reopen_attachments.length})</h3>
+                          <ul className="attachment-list">
+                            {grievance.reopen_attachments.map((attachment) => (
+                              <li key={attachment.id}>
+                                <div className="attachment-row">
+                                  <span>
+                                    <strong>{attachment.file_name}</strong>
+                                    <small>uploaded {formatDate(attachment.uploaded_at)}</small>
+                                  </span>
+                                  <div className="attachment-actions">
+                                    {attachment.file && canPreviewAttachment(attachment) && (
+                                      <button className="btn btn-outline attachment-preview" onClick={() => setPreviewId(`reopen-${attachment.id}`)}>Preview</button>
+                                    )}
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {req.attachment && (
+                        <div className="request-attachment-snippet">
+                          <span>Supporting Document:</span>
+                          <button className="btn btn-outline btn-sm request-preview-toggle" onClick={() => setPreviewId(previewId === `req-${req.id}` ? null : `req-${req.id}`)}>
+                            {previewId === `req-${req.id}` ? 'Close' : 'Preview'}
+                          </button>
+                        </div>
+                      )}
+                      {req.attachment && previewId === `req-${req.id}` && (
+                        <div className="attachment-inline-preview">
+                          {previewKindFromUrl(req.attachment) === 'image' ? (
+                            <img src={req.attachment} alt="Supporting document preview" />
+                          ) : (
+                            <iframe src={`${req.attachment}#toolbar=0&download=0`} title="Supporting document preview" />
+                          )}
+                        </div>
+                      )}
+                      <div className="request-audit-meta">
+                        <span>Submitted: {formatDate(req.created_at)}</span>
+                        {req.reviewed_by_admin_name && <span>Reviewed by: Campus Admin</span>}
+                      </div>
+                      {req.admin_remark && <p className="request-admin-remark"><strong>Campus Admin Remark:</strong> {req.admin_remark}</p>}
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <ReminderCommentList grievance={grievance} />
+
             <section className="detail-section">
               <h2 className="section-title">
                 <span className="section-title-accent" />
-                Student Reopen Requests
+                Official Responses
               </h2>
-              <div className="request-audit-list">
-                {grievance.requests.filter(r => r.request_type !== 'ESCALATION').map((req) => (
-                  <article key={req.id} className="request-audit-card">
-                    <div className="request-audit-header">
-                      <strong>{req.request_type_display}</strong>
-                    </div>
-                    <p className="request-audit-reason"><strong>Reason:</strong> "{req.reason}"</p>
-                    {req.request_type === 'REOPEN' && grievance.reopen_attachments?.length > 0 && (
-                      <div className="reopen-docs-in-card">
-                        <h3 className="reopen-docs-subtitle">Supporting Documents ({grievance.reopen_attachments.length})</h3>
-                        <ul className="attachment-list">
-                          {grievance.reopen_attachments.map((attachment) => (
-                            <li key={attachment.id}>
-                              <div className="attachment-row">
-                                <span>
-                                  <strong>{attachment.file_name}</strong>
-                                  <small>uploaded {formatDate(attachment.uploaded_at)}</small>
-                                </span>
-                                <div className="attachment-actions">
-                                  {attachment.file && canPreviewAttachment(attachment) && (
-                                    <button className="btn btn-outline attachment-preview" onClick={() => setPreviewId(`reopen-${attachment.id}`)}>Preview</button>
-                                  )}
-                                </div>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
+              {grievance.responses?.length ? (
+                <div className="response-list">
+                  {[...grievance.responses].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((response) => (
+                    <article key={response.id} className="response-card">
+                      <header>
+                        <strong>{responderLabel(response)}</strong>
+                        <time>{formatDate(response.created_at)}</time>
+                      </header>
+                      <p>{response.content}</p>
+                    </article>
+                  ))}
+                </div>
+              ) : <p className="empty-note">No official response has been posted yet.</p>}
+            </section>
+
+            <section className="detail-section">
+              <h2 className="section-title">
+                <span className="section-title-accent" />
+                Status History & Audit Trail
+              </h2>
+              {grievance.status_history?.length ? (
+                <div className="audit-timeline">
+                  {grievance.status_history.map((entry, index) => (
+                    <div key={entry.id || index} className="timeline-item">
+                      <div className="timeline-marker-col">
+                        <span className="timeline-marker-dot" />
+                        {index < grievance.status_history.length - 1 && <span className="timeline-line" />}
                       </div>
-                    )}
-                    {req.attachment && (
-                      <div className="request-attachment-snippet">
-                        <span>Supporting Document:</span>
-                        <button className="btn btn-outline btn-sm request-preview-toggle" onClick={() => setPreviewId(previewId === `req-${req.id}` ? null : `req-${req.id}`)}>
-                          {previewId === `req-${req.id}` ? 'Close' : 'Preview'}
-                        </button>
-                      </div>
-                    )}
-                    {req.attachment && previewId === `req-${req.id}` && (
-                      <div className="attachment-inline-preview">
-                        {previewKindFromUrl(req.attachment) === 'image' ? (
-                          <img src={req.attachment} alt="Supporting document preview" />
-                        ) : (
-                          <iframe src={`${req.attachment}#toolbar=0&download=0`} title="Supporting document preview" />
+                      <div className="timeline-card">
+                        <div className="timeline-card-header">
+                          <div className="timeline-transition">
+                            <span className="from-status-tag">{statusLabel(entry.previous_status)}</span>
+                            <svg className="transition-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+                            <StatusBadge status={entry.new_status} />
+                          </div>
+                          <time className="timeline-timestamp">{formatDate(entry.created_at)}</time>
+                        </div>
+                        <div className="timeline-actor-row">
+                          <span className="actor-badge">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                            Action by <strong>{entry.action_by_name || 'System'}</strong>
+                          </span>
+                        </div>
+                        {entry.remarks && (
+                          <div className="timeline-remarks-box">
+                            <p>{entry.remarks}</p>
+                          </div>
                         )}
                       </div>
-                    )}
-                    <div className="request-audit-meta">
-                      <span>Submitted: {formatDate(req.created_at)}</span>
-                      {req.reviewed_by_admin_name && <span>Reviewed by: Campus Admin</span>}
                     </div>
-                    {req.admin_remark && <p className="request-admin-remark"><strong>Campus Admin Remark:</strong> {req.admin_remark}</p>}
-                  </article>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : <p className="empty-note">No status history available.</p>}
             </section>
-          )}
 
-          <ReminderCommentList grievance={grievance} />
+            {/* Reminder Comment Form — appears at end for submitter to post */}
+            <ReminderCommentForm
+              grievance={grievance}
+              isSubmitter={isSubmitter}
+              onCommented={() => {
+                setToast('Your reminder comment was posted. The department has been notified.');
+                loadGrievance(false);
+              }}
+            />
 
-          <section className="detail-section">
-            <h2 className="section-title">
-              <span className="section-title-accent" />
-              Official Responses
-            </h2>
-            {grievance.responses?.length ? (
-              <div className="response-list">
-                {[...grievance.responses].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((response) => (
-                  <article key={response.id} className="response-card">
-                    <header>
-                      <strong>{responderLabel(response)}</strong>
-                      <time>{formatDate(response.created_at)}</time>
-                    </header>
-                    <p>{response.content}</p>
-                  </article>
-                ))}
-              </div>
-            ) : <p className="empty-note">No official response has been posted yet.</p>}
-          </section>
+            {/* Bottom Grievance Controls & Actions */}
 
-          <section className="detail-section">
-            <h2 className="section-title">
-              <span className="section-title-accent" />
-              Status History & Audit Trail
-            </h2>
-            {grievance.status_history?.length ? (
-              <div className="audit-timeline">
-                {grievance.status_history.map((entry, index) => (
-                  <div key={entry.id || index} className="timeline-item">
-                    <div className="timeline-marker-col">
-                      <span className="timeline-marker-dot" />
-                      {index < grievance.status_history.length - 1 && <span className="timeline-line" />}
-                    </div>
-                    <div className="timeline-card">
-                      <div className="timeline-card-header">
-                        <div className="timeline-transition">
-                          <span className="from-status-tag">{statusLabel(entry.previous_status)}</span>
-                          <svg className="transition-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                          <StatusBadge status={entry.new_status} />
-                        </div>
-                        <time className="timeline-timestamp">{formatDate(entry.created_at)}</time>
-                      </div>
-                      <div className="timeline-actor-row">
-                        <span className="actor-badge">
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                          Action by <strong>{entry.action_by_name || 'System'}</strong>
-                        </span>
-                      </div>
-                      {entry.remarks && (
-                        <div className="timeline-remarks-box">
-                          <p>{entry.remarks}</p>
-                        </div>
-                      )}
-                    </div>
+            {/* Rejected Grievance Appeal Banner */}
+            {status === 'REJECTED' && isSubmitter && (
+              <div className="hod-action-panel warning-state" style={{ borderColor: '#fde68a', background: '#fffbeb' }}>
+                <div className="hod-action-panel-header">
+                  <div>
+                    <h3 style={{ color: '#92400e' }}>Grievance Rejected</h3>
+                    <p style={{ color: '#b45309' }}>{hasReopenedOnce ? 'This grievance has already been reopened once and cannot be reopened again.' : 'If you disagree with the department decision, you can reopen the grievance and send it back to the assigned department for further review. If satisfied, you may close it.'}</p>
                   </div>
-                ))}
-              </div>
-            ) : <p className="empty-note">No status history available.</p>}
-          </section>
-
-          {/* Reminder Comment Form — appears at end for submitter to post */}
-          <ReminderCommentForm
-            grievance={grievance}
-            isSubmitter={isSubmitter}
-            onCommented={() => {
-              setToast('Your reminder comment was posted. The department has been notified.');
-              loadGrievance(false);
-            }}
-          />
-
-          {/* Bottom Grievance Controls & Actions */}
-
-          {/* Rejected Grievance Appeal Banner */}
-          {status === 'REJECTED' && isSubmitter && (
-            <div className="hod-action-panel warning-state" style={{ borderColor: '#fde68a', background: '#fffbeb' }}>
-              <div className="hod-action-panel-header">
-                <div>
-                  <h3 style={{ color: '#92400e' }}>Grievance Rejected</h3>
-                  <p style={{ color: '#b45309' }}>{hasReopenedOnce ? 'This grievance has already been reopened once and cannot be reopened again.' : 'If you disagree with the department decision, you can reopen the grievance and send it back to the assigned department for further review. If satisfied, you may close it.'}</p>
                 </div>
-              </div>
-              <div className="detail-actions">
-                {!hasReopenedOnce && (
-                  <button className="btn btn-outline" onClick={() => setRequestModalType('REOPEN')} disabled={Boolean(pendingRequest)}>
-                    {pendingRequest ? 'Reopen Request Pending' : 'Reopen & Send to Department'}
+                <div className="detail-actions">
+                  {!hasReopenedOnce && (
+                    <button className="btn btn-outline" onClick={() => setRequestModalType('REOPEN')} disabled={Boolean(pendingRequest)}>
+                      {pendingRequest ? 'Reopen Request Pending' : 'Reopen & Send to Department'}
+                    </button>
+                  )}
+                  <button className="btn btn-primary" onClick={() => runAction('close')} disabled={submitting}>
+                    Close Grievance
                   </button>
-                )}
-                <button className="btn btn-primary" onClick={() => runAction('close')} disabled={submitting}>
-                  Close Grievance
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* HOD / Campus Admin Action Panel */}
-          {canRespond && (
-            <div className="hod-action-panel">
-              <div className="hod-action-panel-header">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                <div>
-                  <h3>{isAdminRequestReview ? 'Campus Admin Action' : 'Department HOD Action & Status Management'}</h3>
-                  <p>Provide an official response and update the status for this grievance (Currently: <strong>{statusLabel(status)}</strong>).</p>
                 </div>
               </div>
-              <div className="detail-actions">
-                <button className="btn btn-primary" onClick={() => openModal('respond')}>Respond & Update Status</button>
-              </div>
-            </div>
-          )}
+            )}
 
-          {/* Submitter Actions - only show for RESOLVED (REJECTED has its own banner above) */}
-          {canSubmitterClose && (
-            <div className="hod-action-panel">
-              <div className="hod-action-panel-header">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-                <div>
-                  <h3>Grievance Controls</h3>
-                  <p>{hasReopenedOnce ? 'This grievance has already been reopened once and cannot be reopened again. You can close it if satisfied.' : 'Review the response. You can reopen the grievance to send it back to the department, or close it if satisfied.'}</p>
+            {/* HOD / Campus Admin Action Panel */}
+            {canRespond && (
+              <div className="hod-action-panel">
+                <div className="hod-action-panel-header">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                  <div>
+                    <h3>{isAdminRequestReview ? 'Campus Admin Action' : 'Department HOD Action & Status Management'}</h3>
+                    <p>Provide an official response and update the status for this grievance (Currently: <strong>{statusLabel(status)}</strong>).</p>
+                  </div>
+                </div>
+                <div className="detail-actions">
+                  <button className="btn btn-primary" onClick={() => openModal('respond')}>Respond & Update Status</button>
                 </div>
               </div>
-              <div className="detail-actions">
-                {!hasReopenedOnce && (
-                  <button className="btn btn-outline" onClick={() => setRequestModalType('REOPEN')} disabled={Boolean(pendingRequest)}>
-                    {pendingRequest ? 'Reopen Request Pending' : 'Reopen & Send to Department'}
+            )}
+
+            {/* Submitter Actions - only show for RESOLVED (REJECTED has its own banner above) */}
+            {canSubmitterClose && (
+              <div className="hod-action-panel">
+                <div className="hod-action-panel-header">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                  <div>
+                    <h3>Grievance Controls</h3>
+                    <p>{hasReopenedOnce ? 'This grievance has already been reopened once and cannot be reopened again. You can close it if satisfied.' : 'Review the response. You can reopen the grievance to send it back to the department, or close it if satisfied.'}</p>
+                  </div>
+                </div>
+                <div className="detail-actions">
+                  {!hasReopenedOnce && (
+                    <button className="btn btn-outline" onClick={() => setRequestModalType('REOPEN')} disabled={Boolean(pendingRequest)}>
+                      {pendingRequest ? 'Reopen Request Pending' : 'Reopen & Send to Department'}
+                    </button>
+                  )}
+                  <button className="btn btn-primary" onClick={() => runAction('close')} disabled={submitting}>
+                    Close Grievance
                   </button>
-                )}
-                <button className="btn btn-primary" onClick={() => runAction('close')} disabled={submitting}>
-                  Close Grievance
-                </button>
+                </div>
               </div>
-            </div>
-          )}
-        </article>
+            )}
+          </article>
         )}
 
         {/* HOD/Admin Modal */}
