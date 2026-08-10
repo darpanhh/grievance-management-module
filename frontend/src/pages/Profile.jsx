@@ -52,9 +52,9 @@ const Profile = () => {
     <div className="profile-page">
       <div className="profile-container">
         <div className="page-heading">
-          <span>Personal Information</span>
+
           <h1>Your profile</h1>
-          <p>The details registered with the IOE Pulchowk Grievance Portal.</p>
+
         </div>
 
         {loading && <div className="profile-loading"><span className="spinner" />Loading your information...</div>}
@@ -78,9 +78,6 @@ const Profile = () => {
                   <span className="profile-row-value">{row.value || '—'}</span>
                 </div>
               ))}
-            </div>
-            <div className="profile-footer">
-              <Link to="/" className="btn btn-outline">Back to Home</Link>
             </div>
           </div>
         )}
