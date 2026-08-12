@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const MAX_FILES = 3;
 const MAX_SIZE = 5 * 1024 * 1024;
@@ -101,7 +102,7 @@ const FileUpload = ({ files, onChange, disabled = false, hideDropZone = false })
         </ul>
       )}
 
-      {previewFile && (
+      {previewFile && createPortal(
         <div className="file-preview-modal" onClick={() => setPreviewFile(null)}>
           <div className="file-preview-modal-content" onClick={(e) => e.stopPropagation()}>
             <button className="file-preview-close" onClick={() => setPreviewFile(null)}>&times;</button>
@@ -114,7 +115,8 @@ const FileUpload = ({ files, onChange, disabled = false, hideDropZone = false })
             )}
             <div className="file-preview-filename">{previewFile.name}</div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

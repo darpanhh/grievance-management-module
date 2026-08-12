@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import SearchFilter from '../components/SearchFilter';
+import { CategoryBreakdownGraph, TrendLineGraph } from '../components/DashboardCharts';
 import { useAuth } from '../contexts/AuthContext';
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(date)) : '—';
@@ -33,7 +34,8 @@ const DepartmentDashboard = () => {
     closed_resolved: 0,
     escalated: 0,
     status_breakdown: {},
-    monthly_trend: [],
+    category_breakdown: [],
+    trends: {},
   });
 
   const [loading, setLoading] = useState(true);
@@ -81,11 +83,21 @@ const DepartmentDashboard = () => {
     fetchDepartmentGrievances();
   }, [fetchDepartmentGrievances]);
 
-  const showAllGrievances = () => { setStatusFilter(''); setActiveTab('ALL'); };
-  const showActionRequired = () => { setStatusFilter(''); setActiveTab('ACTION_REQUIRED'); };
-  const showEscalatedGrievances = () => { setStatusFilter(''); setActiveTab('ESCALATED'); };
-  const showResolvedGrievances = () => { setStatusFilter(''); setActiveTab('RESOLVED'); };
-  const showStatusGrievances = (status) => () => { setStatusFilter(status); setActiveTab('ALL'); };
+  const showAllGrievances = () => { setStatusFilter(''); setActiveTab('ALL'); scrollToWorkspace(); };
+  const showActionRequired = () => { setStatusFilter(''); setActiveTab('ACTION_REQUIRED'); scrollToWorkspace(); };
+  const showEscalatedGrievances = () => { setStatusFilter(''); setActiveTab('ESCALATED'); scrollToWorkspace(); };
+  const showResolvedGrievances = () => { setStatusFilter(''); setActiveTab('RESOLVED'); scrollToWorkspace(); };
+  const showStatusGrievances = (status) => () => { setStatusFilter(status); setActiveTab('ALL'); scrollToWorkspace(); };
+
+  const workspaceRef = useRef(null);
+
+  const scrollToWorkspace = () => {
+    setTimeout(() => {
+      if (workspaceRef.current) {
+        workspaceRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 50);
+  };
 
   const statusCounts = metrics.status_breakdown || {};
   const underReviewGrievances = statusCounts.UNDER_REVIEW || 0;
@@ -122,13 +134,12 @@ const DepartmentDashboard = () => {
       return `${item.color} ${start}% ${distributionCursor}%`;
     }).join(', ')})`
     : 'conic-gradient(#e2e8f0 0 100%)';
-  const monthlyTrend = metrics.monthly_trend || [];
-  const trendMax = Math.max(...monthlyTrend.map((item) => item.count), 1);
   const kpis = [
     { label: 'Total', value: metrics.total || 0, icon: 'total', tone: 'primary', onClick: showAllGrievances },
     { label: 'Submitted', value: statusCounts.SUBMITTED || 0, icon: 'pending', tone: 'primary', onClick: showStatusGrievances('SUBMITTED') },
     { label: 'Under Review', value: underReviewGrievances, icon: 'underReview', tone: 'primary', onClick: showStatusGrievances('UNDER_REVIEW') },
     { label: 'In Progress', value: inProgressGrievances, icon: 'pending', tone: 'primary', onClick: showStatusGrievances('IN_PROGRESS') },
+    { label: 'Reopened', value: statusCounts.REOPENED || 0, icon: 'pending', tone: 'primary', onClick: showStatusGrievances('REOPENED') },
     { label: 'Resolved', value: metrics.closed_resolved || 0, icon: 'resolved', tone: 'success', onClick: showResolvedGrievances },
     { label: 'Escalated', value: statusCounts.ESCALATED || 0, icon: 'escalated', tone: 'warning', onClick: showStatusGrievances('ESCALATED') },
     { label: 'Rejected', value: statusCounts.REJECTED || 0, icon: 'rejected', tone: 'danger', onClick: showStatusGrievances('REJECTED') },
@@ -156,21 +167,23 @@ const DepartmentDashboard = () => {
           ))}
         </section>
 
-        <section className="admin-charts-grid" aria-label="Grievance analytics">
-          <article className="admin-chart-card status-chart-card">
-            <div className="admin-chart-heading"><div><span>LIVE DISTRIBUTION</span><h2>Grievances by Status</h2></div></div>
-            <div className="admin-status-chart-body">
-              <div className="admin-donut" style={{ background: statusGradient }} role="img" aria-label={`${metrics.total || 0} total grievances`}><div><strong>{metrics.total || 0}</strong><span>Total</span></div></div>
-              <div className="admin-chart-legend">{statusDistribution.length ? statusDistribution.map((item) => <button type="button" key={item.label} onClick={item.onClick}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.value}</strong></button>) : <p>No grievance data yet.</p>}</div>
-            </div>
-          </article>
-          <article className="admin-chart-card trend-chart-card">
-            <div className="admin-chart-heading"><div><span>LAST SIX MONTHS</span><h2>Monthly Grievance Trend</h2></div></div>
-            <div className="admin-bar-chart" role="img" aria-label="Monthly grievance trend">{monthlyTrend.map((item) => <div className="admin-bar-column" key={item.month}><span className="admin-bar-value">{item.count}</span><div className="admin-bar-track"><i style={{ height: `${Math.max(item.count ? 12 : 0, (item.count / trendMax) * 100)}%` }} /></div><span className="admin-bar-label">{item.month}</span></div>)}</div>
-          </article>
+        <section className="admin-charts-section" aria-label="Grievance analytics">
+          <div className="admin-charts-top-row">
+            <article className="admin-chart-card status-chart-card">
+              <div className="admin-chart-heading"><div><h2>Grievances by Status</h2></div></div>
+              <div className="admin-status-chart-body">
+                <div className="admin-donut" style={{ background: statusGradient }} role="img" aria-label={`${metrics.total || 0} total grievances`}><div><strong>{metrics.total || 0}</strong><span>Total</span></div></div>
+                <div className="admin-chart-legend">{statusDistribution.length ? statusDistribution.map((item) => <button type="button" key={item.label} onClick={item.onClick}><i style={{ background: item.color, boxShadow: `0 0 0 3px ${item.color}26` }} /><span>{item.label}</span><strong style={{ background: `${item.color}1f`, color: item.color }}>{item.value}</strong></button>) : <p>No grievance data yet.</p>}</div>
+              </div>
+            </article>
+            <CategoryBreakdownGraph data={metrics.category_breakdown} />
+          </div>
+          <div className="admin-charts-bottom-row">
+            <TrendLineGraph trends={metrics.trends} title="Department Grievance Trend" />
+          </div>
         </section>
 
-        <div className="admin-workspace-label">
+        <div className="admin-workspace-label" ref={workspaceRef}>
           <div><h2>{activeTab === 'ACTION_REQUIRED' ? 'Action Required' : activeTab === 'ESCALATED' ? 'Escalated Grievances Flow' : activeTab === 'RESOLVED' ? 'Resolved Grievances' : 'All Grievances'}</h2></div>
           
         </div>

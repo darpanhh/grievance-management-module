@@ -3,16 +3,6 @@ import api from '../services/api';
 import FileUpload from './FileUpload';
 
 const REQUEST_META = {
-  REJECTION_APPEAL: {
-    title: 'Appeal Rejected Grievance',
-    tag: 'Rejection Appeal',
-    description: 'Provide a clear reason why the rejection should be reconsidered.',
-  },
-  SPAM_APPEAL: {
-    title: 'Appeal Spam Classification',
-    tag: 'Spam Appeal',
-    description: 'Explain why your grievance is genuine and not spam.',
-  },
   REOPEN: {
     title: 'Reopen Grievance',
     tag: 'Reopen Request',
@@ -109,7 +99,7 @@ const RequestModal = ({ grievance, requestType, onClose, onSuccess }) => {
 
         <div className="form-group">
           <label>Supporting Documents <small>(optional, max 3)</small></label>
-          <FileUpload files={files} onChange={setFiles} disabled={submitting} />
+          <FileUpload files={files} onChange={setFiles} disabled={submitting} hideDropZone={files.length >= 3} />
         </div>
 
         <div className="modal-actions">

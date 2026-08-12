@@ -15,7 +15,6 @@ import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-import nltk
 from nltk.corpus import stopwords
 from nltk.stem.porter import PorterStemmer
 
@@ -193,10 +192,6 @@ class MLSpamDetector(SpamDetectorInterface):
     """
 
     def __init__(self):
-        nltk.download('punkt', quiet=True)
-        nltk.download('stopwords', quiet=True)
-        nltk.download('punkt_tab', quiet=True)
-
         model_path = MODEL_DIR / 'grievance_model.pkl'
 
         with open(model_path, 'rb') as f:

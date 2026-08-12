@@ -12,11 +12,11 @@ Phase 5: Grievance Routing
 """
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from django.contrib.auth.hashers import check_password
 from django.db.models import Count, OuterRef, Subquery
-from django.db.models.functions import TruncMonth
+from django.db.models.functions import TruncDay, TruncMonth
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, permissions, status
@@ -493,15 +493,18 @@ def respond_to_grievance(request, pk):
         )
 
     # HOD can respond to SUBMITTED, UNDER_REVIEW, IN_PROGRESS, REOPENED
-    # Campus Admin can respond to any actionable status, including
-    # grievances that have a pending request/appeal awaiting review.
+    # Campus Admin can respond to ESCALATED, SUBMITTED, UNDER_REVIEW, IN_PROGRESS (NOT REOPENED)
+    if is_admin and grievance.current_status == Grievance.Status.REOPENED:
+        raise PermissionDenied(
+            'REOPENED grievances are handled directly by the Department HOD and cannot be updated by Campus Admin.'
+        )
+
     allowed_statuses = (
         (Grievance.Status.SUBMITTED, Grievance.Status.UNDER_REVIEW,
          Grievance.Status.IN_PROGRESS, Grievance.Status.REOPENED)
         if is_hod else
         (Grievance.Status.SUBMITTED, Grievance.Status.UNDER_REVIEW,
-         Grievance.Status.IN_PROGRESS, Grievance.Status.REOPENED,
-         Grievance.Status.ESCALATED)
+         Grievance.Status.IN_PROGRESS, Grievance.Status.ESCALATED)
     )
 
     has_pending_request = Request.objects.filter(
@@ -534,6 +537,16 @@ def respond_to_grievance(request, pk):
         target_status = requested_status
     else:
         target_status = Grievance.Status.IN_PROGRESS
+
+    # HODs cannot move an IN_PROGRESS grievance backwards to UNDER_REVIEW.
+    if is_hod and (
+        grievance.current_status == Grievance.Status.IN_PROGRESS
+        and target_status == Grievance.Status.UNDER_REVIEW
+    ):
+        return Response(
+            {'error': 'Status cannot be changed from In Progress to Under Review.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     # Create the Response record
     from .models import Response as GrievanceResponse
@@ -694,6 +707,9 @@ def resolve_grievance(request, pk):
         raise PermissionDenied(
             'This grievance has been forwarded to Campus Admin and can only be viewed, not updated.'
         )
+
+    if is_admin and grievance.current_status == Grievance.Status.REOPENED:
+        raise PermissionDenied('REOPENED grievances are handled directly by the Department HOD and cannot be updated by Campus Admin.')
 
     # Campus Admin can resolve ESCALATED, IN_PROGRESS, UNDER_REVIEW,
     # or any grievance with a pending request/appeal awaiting their review
@@ -1167,6 +1183,102 @@ class DepartmentDashboardView(generics.GenericAPIView):
                 'count': monthly_counts.get(month.strftime('%Y-%m'), 0),
             })
 
+        # Category Breakdown (scoped to the department)
+        cat_breakdown = []
+        for cat in Category.objects.all():
+            cat_count = grievances_qs.filter(category=cat).count()
+            cat_breakdown.append({
+                'id': cat.id,
+                'name': cat.name,
+                'count': cat_count,
+            })
+        cat_breakdown.sort(key=lambda x: x['count'], reverse=True)
+
+        # Time-Range Trends (7d, 15d, 1m, 6m, 1y) — total vs resolved,
+        # matching the Campus Admin dashboard structure.
+        trend_today = timezone.localdate()
+
+        def build_daily_trend(days):
+            start_date = trend_today - timedelta(days=days - 1)
+            daily_totals = {
+                item['day']: item['count']
+                for item in grievances_qs.filter(created_at__date__gte=start_date)
+                              .annotate(day=TruncDay('created_at'))
+                              .values('day')
+                              .annotate(count=Count('id'))
+                              .order_by('day')
+                if item['day']
+            }
+            daily_resolved = {
+                item['day']: item['count']
+                for item in grievances_qs.filter(
+                    created_at__date__gte=start_date,
+                    current_status__in=[Grievance.Status.RESOLVED, Grievance.Status.CLOSED],
+                ).annotate(day=TruncDay('created_at')).values('day').annotate(count=Count('id'))
+                .order_by('day')
+                if item['day']
+            }
+            trend = []
+            for i in range(days):
+                d = start_date + timedelta(days=i)
+                label = d.strftime('%b %d')
+                t_count = 0
+                r_count = 0
+                for k, v in daily_totals.items():
+                    if (hasattr(k, 'date') and k.date() == d) or k == d:
+                        t_count += v
+                for k, v in daily_resolved.items():
+                    if (hasattr(k, 'date') and k.date() == d) or k == d:
+                        r_count += v
+                trend.append({
+                    'date': d.strftime('%Y-%m-%d'),
+                    'label': label,
+                    'total': t_count,
+                    'resolved': r_count,
+                })
+            return trend
+
+        def build_monthly_trend(months_count):
+            monthly_totals = {
+                item['month'].strftime('%Y-%m'): item['count']
+                for item in grievances_qs.annotate(month=TruncMonth('created_at'))
+                                         .values('month').annotate(count=Count('id'))
+                                         .order_by('month')
+                if item['month']
+            }
+            monthly_resolved = {
+                item['month'].strftime('%Y-%m'): item['count']
+                for item in grievances_qs.filter(
+                    current_status__in=[Grievance.Status.RESOLVED, Grievance.Status.CLOSED],
+                ).annotate(month=TruncMonth('created_at')).values('month').annotate(count=Count('id'))
+                .order_by('month')
+                if item['month']
+            }
+            trend = []
+            for offset in range(months_count - 1, -1, -1):
+                month_number = trend_today.month - offset
+                year = trend_today.year
+                while month_number <= 0:
+                    month_number += 12
+                    year -= 1
+                m_date = date(year, month_number, 1)
+                m_key = m_date.strftime('%Y-%m')
+                trend.append({
+                    'date': m_key,
+                    'label': m_date.strftime('%b %Y') if months_count > 6 else m_date.strftime('%b'),
+                    'total': monthly_totals.get(m_key, 0),
+                    'resolved': monthly_resolved.get(m_key, 0),
+                })
+            return trend
+
+        trends = {
+            '7d': build_daily_trend(7),
+            '15d': build_daily_trend(15),
+            '1m': build_daily_trend(30),
+            '6m': build_monthly_trend(6),
+            '1y': build_monthly_trend(12),
+        }
+
         grievances = grievances_qs[:50]
         data = GrievanceListSerializer(
             grievances, many=True, context={'request': request},
@@ -1180,6 +1292,8 @@ class DepartmentDashboardView(generics.GenericAPIView):
                 'escalated': escalated_count,
                 'status_breakdown': status_breakdown,
                 'monthly_trend': monthly_trend,
+                'category_breakdown': cat_breakdown,
+                'trends': trends,
             },
             'grievances': data,
         })
@@ -1206,39 +1320,129 @@ class AdminDashboardView(generics.GenericAPIView):
             current_status__in=[Grievance.Status.RESOLVED, Grievance.Status.CLOSED]
         ).count()
 
-        pending_requests_qs = Request.objects.filter(status=Request.RequestStatus.PENDING)
+        # Only ESCALATION requests require Campus Admin review.
+        # Reopen requests go directly to HOD and appeals have been removed.
+        pending_requests_qs = Request.objects.filter(
+            status=Request.RequestStatus.PENDING,
+            request_type=Request.RequestType.ESCALATION,
+        )
         pending_requests_count = pending_requests_qs.count()
 
         breakdown = {
-            'REOPEN': pending_requests_qs.filter(request_type=Request.RequestType.REOPEN).count(),
-            'REJECTION_APPEAL': pending_requests_qs.filter(request_type=Request.RequestType.REJECTION_APPEAL).count(),
-            'ESCALATION': pending_requests_qs.filter(request_type=Request.RequestType.ESCALATION).count(),
+            'ESCALATION': pending_requests_count,
         }
 
         status_counts = {}
         for status_choice in Grievance.Status.values:
             status_counts[status_choice] = qs.filter(current_status=status_choice).count()
 
-        # Keep the analytics payload compact while giving the admin dashboard a
-        # meaningful six-month activity trend (including months with no records).
-        monthly_counts = {
-            item['month'].strftime('%Y-%m'): item['count']
-            for item in qs.annotate(month=TruncMonth('created_at')).values('month').annotate(count=Count('id'))
-            if item['month']
-        }
-        today = timezone.localdate()
-        monthly_trend = []
-        for offset in range(5, -1, -1):
-            month_number = today.month - offset
-            year = today.year
-            if month_number <= 0:
-                month_number += 12
-                year -= 1
-            month = date(year, month_number, 1)
-            monthly_trend.append({
-                'month': month.strftime('%b'),
-                'count': monthly_counts.get(month.strftime('%Y-%m'), 0),
+        # Department Performance
+        dept_performance = []
+        for dept in Department.objects.all():
+            dept_qs = qs.filter(department=dept)
+            dept_total = dept_qs.count()
+            dept_resolved = dept_qs.filter(current_status__in=[Grievance.Status.RESOLVED, Grievance.Status.CLOSED]).count()
+            rate = round((dept_resolved / dept_total * 100), 1) if dept_total > 0 else 0.0
+            dept_performance.append({
+                'id': dept.id,
+                'name': dept.name,
+                'total': dept_total,
+                'resolved': dept_resolved,
+                'resolution_rate': rate,
             })
+        dept_performance.sort(key=lambda x: x['total'], reverse=True)
+
+        # Category Breakdown
+        cat_breakdown = []
+        for cat in Category.objects.all():
+            cat_count = qs.filter(category=cat).count()
+            cat_breakdown.append({
+                'id': cat.id,
+                'name': cat.name,
+                'count': cat_count,
+            })
+        cat_breakdown.sort(key=lambda x: x['count'], reverse=True)
+
+        # Time-Range Trends (7d, 15d, 1m, 6m, 1y)
+        today = timezone.localdate()
+
+        def build_daily_trend(days):
+            start_date = today - timedelta(days=days - 1)
+            daily_totals = {
+                item['day']: item['count']
+                for item in qs.filter(created_at__date__gte=start_date)
+                              .annotate(day=TruncDay('created_at'))
+                              .values('day')
+                              .annotate(count=Count('id'))
+                if item['day']
+            }
+            daily_resolved = {
+                item['day']: item['count']
+                for item in qs.filter(created_at__date__gte=start_date, current_status__in=[Grievance.Status.RESOLVED, Grievance.Status.CLOSED])
+                              .annotate(day=TruncDay('created_at'))
+                              .values('day')
+                              .annotate(count=Count('id'))
+                if item['day']
+            }
+            trend = []
+            for i in range(days):
+                d = start_date + timedelta(days=i)
+                label = d.strftime('%b %d')
+                t_count = 0
+                r_count = 0
+                for k, v in daily_totals.items():
+                    if (hasattr(k, 'date') and k.date() == d) or k == d:
+                        t_count += v
+                for k, v in daily_resolved.items():
+                    if (hasattr(k, 'date') and k.date() == d) or k == d:
+                        r_count += v
+                trend.append({
+                    'date': d.strftime('%Y-%m-%d'),
+                    'label': label,
+                    'total': t_count,
+                    'resolved': r_count,
+                })
+            return trend
+
+        def build_monthly_trend(months_count):
+            monthly_totals = {
+                item['month'].strftime('%Y-%m'): item['count']
+                for item in qs.annotate(month=TruncMonth('created_at')).values('month').annotate(count=Count('id'))
+                if item['month']
+            }
+            monthly_resolved = {
+                item['month'].strftime('%Y-%m'): item['count']
+                for item in qs.filter(current_status__in=[Grievance.Status.RESOLVED, Grievance.Status.CLOSED])
+                              .annotate(month=TruncMonth('created_at')).values('month').annotate(count=Count('id'))
+                if item['month']
+            }
+            trend = []
+            for offset in range(months_count - 1, -1, -1):
+                month_number = today.month - offset
+                year = today.year
+                while month_number <= 0:
+                    month_number += 12
+                    year -= 1
+                m_date = date(year, month_number, 1)
+                m_key = m_date.strftime('%Y-%m')
+                trend.append({
+                    'date': m_key,
+                    'label': m_date.strftime('%b %Y') if months_count > 6 else m_date.strftime('%b'),
+                    'total': monthly_totals.get(m_key, 0),
+                    'resolved': monthly_resolved.get(m_key, 0),
+                })
+            return trend
+
+        trends = {
+            '7d': build_daily_trend(7),
+            '15d': build_daily_trend(15),
+            '1m': build_daily_trend(30),
+            '6m': build_monthly_trend(6),
+            '1y': build_monthly_trend(12),
+        }
+
+        # Keep legacy monthly_trend
+        monthly_trend = trends['6m']
 
         recent = _with_attachment_count(
             Grievance.objects.select_related('category', 'department', 'user')
@@ -1254,6 +1458,9 @@ class AdminDashboardView(generics.GenericAPIView):
                 'status_breakdown': status_counts,
                 'escalated': status_counts.get(Grievance.Status.ESCALATED, 0),
                 'monthly_trend': monthly_trend,
+                'department_performance': dept_performance,
+                'category_breakdown': cat_breakdown,
+                'trends': trends,
             },
             'recent': recent_data,
         })
@@ -1366,23 +1573,23 @@ class AdminRequestListView(generics.ListAPIView):
     GET /api/admin/requests/
 
     Campus Admin only. Lists all requests with optional filters:
-      - request_type (REOPEN, REJECTION_APPEAL, SPAM_APPEAL, ESCALATION)
+      - request_type (REJECTION_APPEAL, SPAM_APPEAL, ESCALATION)
+        Note: REOPEN requests are handled directly by the HOD and are
+        excluded from the Admin queue by default.
       - status (PENDING, FORWARDED, REJECTED)
       - search (search in reason, grievance title, student username)
     """
 
     serializer_class = RequestSerializer
     permission_classes = (permissions.IsAuthenticated, IsCampusAdmin)
-    pagination_class = None
 
     def get_queryset(self):
         qs = Request.objects.select_related(
             'grievance', 'student', 'reviewed_by_admin', 'forwarded_department'
+        ).filter(
+            request_type=Request.RequestType.ESCALATION
         ).order_by('-created_at')
 
-        req_type = self.request.query_params.get('request_type')
-        if req_type:
-            qs = qs.filter(request_type=req_type.upper())
 
         req_status = self.request.query_params.get('status')
         if req_status:

@@ -77,7 +77,7 @@ const GrievanceDetail = () => {
   }, [previewAttachment, previewIndex]);
 
   const closeModal = () => { setModal(null); setContent(''); setEscalateReason(''); setSelectedStatus('UNDER_REVIEW'); };
-  const openModal = (action) => { setToast(''); setContent(''); setEscalateReason(''); setSelectedStatus('UNDER_REVIEW'); setModal(action); };
+  const openModal = (action) => { setToast(''); setContent(''); setEscalateReason(''); setSelectedStatus(action === 'respond' && status === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'UNDER_REVIEW'); setModal(action); };
 
   const actionError = (requestError) => {
     const data = requestError.response?.data;
@@ -161,10 +161,10 @@ const GrievanceDetail = () => {
   const hodBlockedAfterEscalation = status === 'ESCALATED' || hasPendingEscalation || Number(grievance?.escalation_level) > 0;
   const canHodAct = isHOD && !hodBlockedAfterEscalation && ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'].includes(status) && (isSameDept || !userDeptId || !grievanceDeptId);
   const canRespond = canHodAct
-    || (isAdmin && !adminTerminalStatus && (status === 'ESCALATED' || hasPendingRequest || adminInvolved));
+    || (isAdmin && !adminTerminalStatus && status !== 'REOPENED' && (status === 'ESCALATED' || hasPendingEscalation));
   const canHodEscalate = canHodAct;
 
-  const isAdminRequestReview = isAdmin && !adminTerminalStatus && (status === 'ESCALATED' || hasPendingRequest || adminInvolved);
+  const isAdminRequestReview = isAdmin && !adminTerminalStatus && status !== 'REOPENED' && (status === 'ESCALATED' || hasPendingEscalation);
 
   const pendingRequest = grievance.requests?.find(r => r.status === 'PENDING');
 
@@ -555,7 +555,9 @@ const GrievanceDetail = () => {
                       </>
                     ) : (
                       <>
-                        <option value="UNDER_REVIEW">Under Review (Reviewing Submission)</option>
+                        {status !== 'IN_PROGRESS' && (
+                          <option value="UNDER_REVIEW">Under Review (Reviewing Submission)</option>
+                        )}
                         <option value="IN_PROGRESS">In Progress (Active Investigation)</option>
                         <option value="RESOLVED">Resolved (Mark Issue as Solved)</option>
                         <option value="REJECTED">Rejected (Decline / Reject Grievance)</option>
