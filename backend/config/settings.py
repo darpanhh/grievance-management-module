@@ -226,9 +226,9 @@ BASE_URL = os.getenv('BASE_URL', 'http://localhost:8000')
 #   Both settings accept fractional values for testing (e.g. 0.0833 ≈ 5 min).
 #   Override via .env — no code changes required.
 #
-# Production defaults:  ESCALATION_HOURS=72  ESCALATION_INTERVAL_MINUTES=60
+# Production defaults:  ESCALATION_HOURS=168  ESCALATION_INTERVAL_MINUTES=60
 # Testing overrides:    ESCALATION_HOURS=0.0833  ESCALATION_INTERVAL_MINUTES=1
 
-ESCALATION_HOURS = float(os.getenv('ESCALATION_HOURS', '72'))            # default: 3 days
+ESCALATION_HOURS = float(os.getenv('ESCALATION_HOURS', '168'))           # default: 7 days
 ESCALATION_INTERVAL_MINUTES = float(os.getenv('ESCALATION_INTERVAL_MINUTES', '60'))  # default: 1 hour
 

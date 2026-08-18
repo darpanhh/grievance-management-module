@@ -17,6 +17,40 @@ const previewKindFromUrl = (url) => {
   return 'other';
 };
 
+const filterStatusHistory = (history, userRole) => {
+  if (!history || !history.length || userRole === 'HOD' || userRole === 'CAMPUS_ADMIN' || userRole === 'DEPARTMENT_ADMIN') {
+    return history;
+  }
+
+  const filtered = [];
+
+  for (let i = 0; i < history.length; i++) {
+    const entry = history[i];
+
+    if (entry.new_status === 'ESCALATED') {
+      continue;
+    }
+
+    let prevStatus = entry.previous_status;
+    let j = i - 1;
+    while (j >= 0 && history[j].new_status === 'ESCALATED') {
+      prevStatus = history[j].previous_status;
+      j--;
+    }
+
+    if (j < i - 1) {
+      filtered.push({
+        ...entry,
+        previous_status: prevStatus,
+      });
+    } else {
+      filtered.push(entry);
+    }
+  }
+
+  return filtered;
+};
+
 const GrievanceDetail = () => {
   const { id } = useParams();
   const location = useLocation();
@@ -35,6 +69,7 @@ const GrievanceDetail = () => {
   const [content, setContent] = useState('');
   const [escalateReason, setEscalateReason] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('UNDER_REVIEW');
+  const [statusTouched, setStatusTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [spamSubmitting, setSpamSubmitting] = useState(false);
 
@@ -80,7 +115,7 @@ const GrievanceDetail = () => {
     return () => window.removeEventListener('keydown', handler);
   }, [previewAttachment, previewIndex]);
 
-  const closeModal = () => { setModal(null); setContent(''); setEscalateReason(''); setSelectedStatus('UNDER_REVIEW'); };
+  const closeModal = () => { setModal(null); setContent(''); setEscalateReason(''); setSelectedStatus('UNDER_REVIEW'); setStatusTouched(false); };
   const openModal = (action) => {
     setToast('');
     setContent('');
@@ -88,7 +123,7 @@ const GrievanceDetail = () => {
     let defaultStatus = 'UNDER_REVIEW';
     if (action === 'respond' && status) {
       if (isAdminRequestReview) {
-        defaultStatus = status === 'UNDER_REVIEW' ? 'IN_PROGRESS' : 'UNDER_REVIEW';
+        defaultStatus = ['REOPENED', 'ESCALATED'].includes(status) ? 'UNDER_REVIEW' : (status === 'UNDER_REVIEW' ? 'IN_PROGRESS' : 'RESOLVED');
       } else if (status === 'IN_PROGRESS') {
         defaultStatus = 'RESOLVED';
       } else if (status === 'UNDER_REVIEW') {
@@ -96,6 +131,7 @@ const GrievanceDetail = () => {
       }
     }
     setSelectedStatus(defaultStatus);
+    setStatusTouched(false);
     setModal(action);
   };
 
@@ -173,7 +209,13 @@ const GrievanceDetail = () => {
   if (!grievance) return <div className="dashboard-state error-state"><h1>Unable to load grievance</h1><p>{error}</p><button className="btn btn-primary" onClick={() => loadGrievance()}>Try again</button></div>;
 
   const role = (user?.role || '').toUpperCase();
+  const filteredHistory = filterStatusHistory(grievance.status_history, role);
   const status = grievance.current_status;
+  // Students must not see the internal ESCALATED status — the top badge
+  // mirrors the filtered status history instead.
+  const displayStatus = status === 'ESCALATED' && filteredHistory.length
+    ? filteredHistory[filteredHistory.length - 1].new_status
+    : status;
   const isHOD = ['HOD', 'DEPARTMENT_ADMIN'].includes(role);
   const isAdmin = role === 'CAMPUS_ADMIN';
   const userDeptId = user?.department?.id || user?.department;
@@ -201,12 +243,17 @@ const GrievanceDetail = () => {
   // HOD can only view the grievance — respond/update is disabled.
   const hodBlockedAfterEscalation = status === 'ESCALATED' || hasPendingEscalation || Number(grievance?.escalation_level) > 0;
   const canHodAct = isHOD && !hodBlockedAfterEscalation && !isSpamHandled && ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'].includes(status) && (isSameDept || !userDeptId || !grievanceDeptId);
+  // Campus Admin keeps control of an escalated grievance (ESCALATED,
+  // UNDER_REVIEW, IN_PROGRESS, or REOPENED after a prior escalation)
+  // until it reaches a terminal status (RESOLVED/REJECTED/CLOSED).
+  const escalatedToAdmin = Boolean(grievance.requests?.some(r => r.request_type === 'ESCALATION' && r.status !== 'REJECTED')) || Number(grievance?.escalation_level) > 0;
+  const escalatedAdminStatuses = ['ESCALATED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'];
   const canRespond = canHodAct
-    || (isAdmin && !adminTerminalStatus && status !== 'REOPENED' && (status === 'ESCALATED' || hasPendingEscalation));
+    || (isAdmin && !adminTerminalStatus && escalatedToAdmin && escalatedAdminStatuses.includes(status));
   const canHodEscalate = canHodAct;
 
-  // Campus Admin reviews only escalations.
-  const isAdminRequestReview = isAdmin && !adminTerminalStatus && status !== 'REOPENED' && (status === 'ESCALATED' || hasPendingEscalation);
+  // Campus Admin reviews escalated grievances until resolved or rejected.
+  const isAdminRequestReview = isAdmin && !adminTerminalStatus && escalatedToAdmin && escalatedAdminStatuses.includes(status);
 
   const pendingRequest = grievance.requests?.find(r => r.status === 'PENDING');
 
@@ -228,7 +275,7 @@ const GrievanceDetail = () => {
             <article className="grievance-detail sensitive-blurred">
               <header className="detail-header">
                 <div className="detail-header-top">
-                  <StatusBadge status={status} />
+                  <StatusBadge status={displayStatus} />
                 </div>
                 <h1>{grievance.title}</h1>
                 <div className="detail-subtext">
@@ -267,9 +314,9 @@ const GrievanceDetail = () => {
               />
               <section className="detail-section">
                 <h2 className="section-title"><span className="section-title-accent" />Status History & Audit Trail</h2>
-                {grievance.status_history?.length ? (
+                {filteredHistory?.length ? (
                   <div className="audit-timeline">
-                    {grievance.status_history.map((entry, index) => (
+                    {filteredHistory.map((entry, index) => (
                       <div key={entry.id || index} className="timeline-item">
                         <div className="timeline-marker-col">
                           <span className="timeline-marker-dot" />
@@ -315,7 +362,7 @@ const GrievanceDetail = () => {
           <article className="grievance-detail">
             <header className="detail-header">
               <div className="detail-header-top">
-                <StatusBadge status={status} />
+                <StatusBadge status={displayStatus} />
               </div>
               <h1>{grievance.title}</h1>
               <div className="detail-subtext">
@@ -433,9 +480,9 @@ const GrievanceDetail = () => {
                 <span className="section-title-accent" />
                 Status History & Audit Trail
               </h2>
-              {grievance.status_history?.length ? (
+              {filteredHistory?.length ? (
                 <div className="audit-timeline">
-                  {grievance.status_history.map((entry, index) => (
+                  {filteredHistory.map((entry, index) => (
                     <div key={entry.id || index} className="timeline-item">
                       <div className="timeline-marker-col">
                         <span className="timeline-marker-dot" />
@@ -535,21 +582,27 @@ const GrievanceDetail = () => {
                     id="workflow-status"
                     className="status-select-dropdown"
                     value={selectedStatus}
-                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    onChange={(e) => { setSelectedStatus(e.target.value); setStatusTouched(true); }}
                   >
-                    {(isAdminRequestReview
-                      ? [
-                          ['UNDER_REVIEW', 'Under Review (Reviewing Submission)'],
-                          ['IN_PROGRESS', 'In Progress (Active Investigation)'],
-                          ['RESOLVED', 'Resolved (Mark Issue as Solved)'],
-                          ['REJECTED', 'Rejected (Decline / Reject Grievance)'],
-                        ]
-                      : [
+{(isAdminRequestReview
+  ? [
+      ...(status !== 'IN_PROGRESS' && !['IN_PROGRESS', 'RESOLVED', 'REJECTED'].includes(selectedStatus)
+        ? [['UNDER_REVIEW', 'Under Review (Reviewing Submission)']]
+        : []),
+      ...(status !== 'IN_PROGRESS' && (status === 'UNDER_REVIEW' || !['IN_PROGRESS', 'RESOLVED', 'REJECTED'].includes(selectedStatus))
+        ? [['IN_PROGRESS', 'In Progress (Active Investigation)']]
+        : []),
+      ['RESOLVED', 'Resolved (Mark Issue as Solved)'],
+      ['REJECTED', 'Rejected (Decline / Reject Grievance)'],
+    ]
+  : [
                           ...(status !== 'IN_PROGRESS' ? [['UNDER_REVIEW', 'Under Review (Reviewing Submission)']] : []),
                           ['IN_PROGRESS', 'In Progress (Active Investigation)'],
                           ['RESOLVED', 'Resolved (Mark Issue as Solved)'],
                           ['REJECTED', 'Rejected (Decline / Reject Grievance)'],
-                          ['ESCALATED', 'Escalated (Forward to Campus Admin)'],
+                          ...(status === 'SUBMITTED' && !(statusTouched && ['UNDER_REVIEW', 'IN_PROGRESS'].includes(selectedStatus))
+                            ? [['ESCALATED', 'Escalated (Forward to Campus Admin)']]
+                            : []),
                         ]
                     )
                       .filter(([optionValue]) => optionValue !== status)
@@ -634,7 +687,9 @@ const GrievanceDetail = () => {
 
 function SpamReviewCard({ grievance, canReview, submitting, onReview }) {
   const spamStatus = grievance.spam_status;
-  if (!spamStatus) return null;
+  // Only show while a spam decision is pending — once decided (NOT_SPAM /
+  // SPAM) the outcome is already visible in the status history.
+  if (!spamStatus || spamStatus !== 'REVIEW') return null;
 
   const tones = {
     REVIEW: 'review',

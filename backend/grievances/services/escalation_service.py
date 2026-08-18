@@ -4,7 +4,7 @@ APScheduler-based escalation service for overdue grievances.
 Runs on a periodic schedule (default: every 60 minutes) and:
 
   1. Finds grievances in SUBMITTED / UNDER_REVIEW / REOPENED that haven't
-     been updated within ESCALATION_HOURS (default: 72h)
+     been updated within ESCALATION_HOURS (default: 168h / 7 days)
   2. Sets escalation_level = 1, status = ESCALATED
   3. Assigns an active Campus Admin
   4. Sends an HTML email notification to the assigned officer
@@ -40,7 +40,16 @@ logger = logging.getLogger(__name__)
 
 def get_escalation_hours() -> int:
     """Return the inactivity threshold (hours) from settings."""
-    return getattr(settings, 'ESCALATION_HOURS', 72)
+    return getattr(settings, 'ESCALATION_HOURS', 168)
+
+
+def format_inactivity_window() -> str:
+    """Human-readable inactivity window (e.g. '7 days' or '36 hours')."""
+    hours = get_escalation_hours()
+    if hours % 24 == 0:
+        days = int(hours // 24)
+        return f"{days} day{'s' if days != 1 else ''}"
+    return f"{hours:g} hour{'s' if hours != 1 else ''}"
 
 
 def find_next_officer(grievance: Grievance) -> User | None:  # noqa: ARG001
@@ -139,7 +148,7 @@ def escalate(grievance: Grievance) -> bool:
     grievance.current_status = Grievance.Status.ESCALATED
     grievance._action_by = None  # system action
     grievance._action_remarks = (
-        f"Auto-escalated after {get_escalation_hours()} hours of inactivity. "
+        f"Auto-escalated after {format_inactivity_window()} of inactivity. "
         f"Assigned to {admin_name}."
     )
     grievance.save(update_fields=[
@@ -154,7 +163,7 @@ def escalate(grievance: Grievance) -> bool:
         grievance=grievance,
         student=None,
         request_type=Request.RequestType.ESCALATION,
-        reason=f"System auto-escalated after {get_escalation_hours()} hours of inactivity without resolution.",
+        reason=f"System auto-escalated after {format_inactivity_window()} of inactivity without resolution.",
         status=Request.RequestStatus.PENDING,
         original_status=previous_status,
     )

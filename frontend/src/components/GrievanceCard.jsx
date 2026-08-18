@@ -9,7 +9,7 @@ const GrievanceCard = ({ grievance }) => (
       <div className="grievance-card-title-group">
         <h3 className="grievance-card-title">{grievance.title}</h3>
       </div>
-      <StatusBadge status={grievance.current_status} />
+      <StatusBadge status={grievance.display_status || grievance.current_status} />
     </div>
 
     <div className="grievance-card-meta">

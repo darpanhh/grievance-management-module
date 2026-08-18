@@ -150,7 +150,7 @@ const AdminDashboard = () => {
 
   const requestEffectiveDate = (req) => new Date(req.request_type === "ESCALATION" ? req.grievance_created_at : req.created_at);
   const displayRequests = requestsList
-    .filter((req) => req.request_type === "ESCALATION")
+    .filter((req) => ["ESCALATION", "REOPEN"].includes(req.request_type))
     .filter((req) => !["RESOLVED", "REJECTED"].includes(req.grievance_current_status))
     .filter((req) => {
       if (requestGrievanceStatusFilter && req.grievance_current_status !== requestGrievanceStatusFilter) return false;
@@ -204,9 +204,7 @@ const AdminDashboard = () => {
             <h1>Campus Administration</h1>
             <p>Monitor campus-wide grievances and focus on what needs attention.</p>
           </div>
-          <span className="spam-stats-chip" title="Grievances confirmed as spam and removed from escalation tracking">
-            Spam: {metrics.spam_count || 0} ({metrics.spam_rate || 0}%)
-          </span>
+          
         </header>
 
         {toast && <div className="workflow-toast success" role="status">{toast}<button aria-label="Dismiss message" onClick={() => setToast("")}>×</button></div>}

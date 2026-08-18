@@ -15,7 +15,7 @@ import logging
 from datetime import date, timedelta
 
 from django.contrib.auth.hashers import check_password
-from django.db.models import Count, OuterRef, Q, Subquery
+from django.db.models import Count, Exists, OuterRef, Q, Subquery
 from django.db.models.functions import TruncDay, TruncMonth
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -507,8 +507,17 @@ def respond_to_grievance(request, pk):
         )
 
     # HOD can respond to SUBMITTED, UNDER_REVIEW, IN_PROGRESS, REOPENED
-    # Campus Admin can respond to ESCALATED, SUBMITTED, UNDER_REVIEW, IN_PROGRESS (NOT REOPENED)
-    if is_admin and grievance.current_status == Grievance.Status.REOPENED:
+    # Campus Admin can respond to ESCALATED, SUBMITTED, UNDER_REVIEW,
+    # IN_PROGRESS, and REOPENED when the grievance has escalation history.
+    has_escalation_history = Request.objects.filter(
+        grievance=grievance,
+        request_type=Request.RequestType.ESCALATION,
+    ).exists()
+    if (
+        is_admin
+        and grievance.current_status == Grievance.Status.REOPENED
+        and not has_escalation_history
+    ):
         raise PermissionDenied(
             'REOPENED grievances are handled directly by the Department HOD and cannot be updated by Campus Admin.'
         )
@@ -518,7 +527,8 @@ def respond_to_grievance(request, pk):
          Grievance.Status.IN_PROGRESS, Grievance.Status.REOPENED)
         if is_hod else
         (Grievance.Status.SUBMITTED, Grievance.Status.UNDER_REVIEW,
-         Grievance.Status.IN_PROGRESS, Grievance.Status.ESCALATED)
+         Grievance.Status.IN_PROGRESS, Grievance.Status.ESCALATED,
+         Grievance.Status.REOPENED)
     )
 
     has_pending_request = Request.objects.filter(
@@ -557,9 +567,11 @@ def respond_to_grievance(request, pk):
     else:
         target_status = Grievance.Status.IN_PROGRESS
 
-    # HODs cannot move an IN_PROGRESS grievance backwards to UNDER_REVIEW.
-    if is_hod and (
-        grievance.current_status == Grievance.Status.IN_PROGRESS
+    # Neither HOD nor Campus Admin can move an IN_PROGRESS grievance
+    # backwards to UNDER_REVIEW.
+    if (
+        (is_hod or is_admin)
+        and grievance.current_status == Grievance.Status.IN_PROGRESS
         and target_status == Grievance.Status.UNDER_REVIEW
     ):
         return Response(
@@ -583,6 +595,35 @@ def respond_to_grievance(request, pk):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Campus Admin handles escalated grievances to completion only — the
+    # only allowed transitions are RESOLVED or REJECTED (terminal), except
+    # for REOPENED/UNDER_REVIEW/ESCALATED grievances where the admin may
+    # also move forward through UNDER_REVIEW / IN_PROGRESS before finishing.
+    if is_admin and (
+        grievance.escalation_level > 0
+        or Request.objects.filter(
+            grievance=grievance,
+            request_type=Request.RequestType.ESCALATION,
+        ).exists()
+    ) and (
+        grievance.current_status == Grievance.Status.IN_PROGRESS
+        or target_status not in (
+            Grievance.Status.UNDER_REVIEW,
+            Grievance.Status.IN_PROGRESS,
+        )
+    ) and target_status not in (
+        Grievance.Status.RESOLVED,
+        Grievance.Status.REJECTED,
+    ):
+        return Response(
+            {
+                'error': (
+                    'Campus Admin can only resolve or reject an escalated grievance.'
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     # Create the Response record
     from .models import Response as GrievanceResponse
     GrievanceResponse.objects.create(
@@ -594,7 +635,7 @@ def respond_to_grievance(request, pk):
     # Transition status (signal auto-logs StatusHistory)
     grievance._action_by = request.user
     role_label = 'Campus Admin' if request.user.role == 'CAMPUS_ADMIN' else 'HOD'
-    grievance._action_remarks = f"{role_label} Response: \"{content}\""
+    grievance._action_remarks = f"{role_label} Response: {content}"
     grievance.current_status = target_status
 
     # Admin accepting a spam-rejected grievance (e.g. approving an appeal)
@@ -614,7 +655,7 @@ def respond_to_grievance(request, pk):
         grievance.spam_reviewed_at = None
         appeal_reversal = True
 
-    update_fields = ['current_status']
+    update_fields = ['current_status', 'updated_at']
     if appeal_reversal:
         update_fields += ['spam_status', 'spam_reviewed_by', 'spam_reviewed_at']
     grievance.save(update_fields=update_fields)
@@ -635,9 +676,10 @@ def respond_to_grievance(request, pk):
                 resolved_at=timezone.now(),
             )
         else:
-            # Intermediate action (IN_PROGRESS, UNDER_REVIEW) — update Request status to match grievance
+            # Intermediate action (IN_PROGRESS, UNDER_REVIEW) — keep the
+            # escalation request PENDING so the grievance stays in the
+            # admin's Action Required queue until it is RESOLVED or REJECTED.
             pending_requests.update(
-                status=Request.RequestStatus.FORWARDED,
                 reviewed_by_admin=request.user if is_admin else None,
                 admin_remark=content,
             )
@@ -751,13 +793,10 @@ def hod_escalate_grievance(request, pk):
         pk=pk,
     )
 
-    # Only allowed from actionable statuses
-    if grievance.current_status not in (
-        Grievance.Status.SUBMITTED,
-        Grievance.Status.UNDER_REVIEW,
-        Grievance.Status.IN_PROGRESS,
-        Grievance.Status.REOPENED,
-    ):
+    # Only allowed from SUBMITTED — once the grievance leaves the submitted
+    # state (under review, in progress, reopened, etc.), escalation is no
+    # longer offered.
+    if grievance.current_status != Grievance.Status.SUBMITTED:
         return Response(
             {'error': 'Grievance cannot be escalated from its current status.'},
             status=status.HTTP_400_BAD_REQUEST,
@@ -899,14 +938,14 @@ def resolve_grievance(request, pk):
         )
 
     user_note = request.data.get('content', '').strip() or request.data.get('remarks', '').strip()
-    note_text = f" Note: \"{user_note}\"" if user_note else ""
+    note_text = f" Note: {user_note}" if user_note else ""
 
     # Transition status (signal auto-logs StatusHistory)
     grievance._action_by = request.user
     role_label = 'Campus Admin' if is_admin else ('HOD' if is_hod else 'the submitter')
     grievance._action_remarks = f"Resolved by {role_label}.{note_text}"
     grievance.current_status = Grievance.Status.RESOLVED
-    grievance.save(update_fields=['current_status'])
+    grievance.save(update_fields=['current_status', 'updated_at'])
 
     # Close out any pending request/appeal when resolved by Campus Admin
     if is_admin:
@@ -968,7 +1007,7 @@ def reopen_grievance(request, pk):
         )
 
     user_note = request.data.get('content', '').strip() or request.data.get('remarks', '').strip()
-    note_text = f" Reason: \"{user_note}\"" if user_note else ""
+    note_text = f" Reason: {user_note}" if user_note else ""
 
     previous_status = grievance.current_status
 
@@ -1008,7 +1047,7 @@ def reopen_grievance(request, pk):
     grievance._action_remarks = f"Reopened by the submitter for further department review.{note_text}"
     grievance.is_reopened = True
     grievance.current_status = Grievance.Status.REOPENED
-    grievance.save(update_fields=['is_reopened', 'current_status'])
+    grievance.save(update_fields=['is_reopened', 'current_status', 'updated_at'])
 
     # Create a Request record to store the reopen reason for audit trail
     Request.objects.create(
@@ -1030,8 +1069,51 @@ def reopen_grievance(request, pk):
             file=f,
         )
 
+    # A grievance that was escalated before is handled by Campus Admin
+    # directly: forward it to the admin's Action Required queue instead
+    # of returning it to the department HOD.
+    was_escalated = Request.objects.filter(
+        grievance=grievance,
+        request_type=Request.RequestType.ESCALATION,
+    ).exists()
+    if was_escalated:
+        from accounts.models import User
+        next_officer = (
+            User.objects.filter(role=User.Role.CAMPUS_ADMIN, is_active=True)
+            .order_by('?')
+            .first()
+        )
+        if next_officer:
+            grievance.escalation_level = 1
+            grievance.escalated_to = next_officer
+            grievance._action_by = None  # system action
+            grievance._action_remarks = (
+                "Auto-forwarded to Campus Admin — this grievance was "
+                "previously escalated and was reopened by the submitter."
+            )
+            grievance.current_status = Grievance.Status.ESCALATED
+            grievance.save(update_fields=[
+                'escalation_level', 'escalated_to',
+                'current_status', 'updated_at',
+            ])
+
+            Request.objects.create(
+                grievance=grievance,
+                student=None,
+                request_type=Request.RequestType.ESCALATION,
+                reason=(
+                    "Reopened by the submitter after a previous escalation. "
+                    "Forwarded to Campus Admin for resolution."
+                ),
+                status=Request.RequestStatus.PENDING,
+                original_status=Grievance.Status.REOPENED,
+            )
+
+            from .services.escalation_service import send_escalation_email
+            send_escalation_email(grievance, next_officer)
+
     # Notify the department HOD about the reopen request
-    if grievance.department:
+    if not was_escalated and grievance.department:
         hod = grievance.department.users.filter(role='HOD').first()
         if hod and hod.email:
             submitter = grievance.user.get_full_name() or grievance.user.username if not grievance.is_anonymous else 'Anonymous'
@@ -1150,12 +1232,12 @@ def close_grievance(request, pk):
         )
 
     user_note = request.data.get('content', '').strip() or request.data.get('remarks', '').strip()
-    note_text = f" Reason: \"{user_note}\"" if user_note else ""
+    note_text = f" Reason: {user_note}" if user_note else ""
 
     grievance._action_by = request.user
     grievance._action_remarks = f"Grievance closed by {'HOD' if is_hod else 'submitter'}.{note_text}"
     grievance.current_status = Grievance.Status.CLOSED
-    grievance.save(update_fields=['current_status'])
+    grievance.save(update_fields=['current_status', 'updated_at'])
 
     detail = GrievanceDetailSerializer(grievance, context={'request': request}).data
     return Response(detail, status=status.HTTP_200_OK)
@@ -1204,7 +1286,7 @@ def admin_resolve_escalated(request, pk):
         f"Escalated grievance resolved by Campus Admin {admin_name}."
     )
     grievance.current_status = Grievance.Status.RESOLVED
-    grievance.save(update_fields=['current_status'])
+    grievance.save(update_fields=['current_status', 'updated_at'])
 
     # 3. Auto-close: RESOLVED → CLOSED (no submitter check needed — final)
     grievance._action_by = request.user
@@ -1212,7 +1294,7 @@ def admin_resolve_escalated(request, pk):
         f"Auto-closed after Campus Admin {admin_name} resolved the escalated grievance."
     )
     grievance.current_status = Grievance.Status.CLOSED
-    grievance.save(update_fields=['current_status'])
+    grievance.save(update_fields=['current_status', 'updated_at'])
 
     # Notify the submitter about the resolution
     send_resolution_email(grievance)
@@ -1888,8 +1970,24 @@ class AdminRequestListView(generics.ListAPIView):
     def get_queryset(self):
         qs = Request.objects.select_related(
             'grievance', 'student', 'reviewed_by_admin', 'forwarded_department'
-        ).filter(
-            request_type=Request.RequestType.ESCALATION
+        )
+
+        # Include ESCALATION requests plus REOPEN requests of grievances that
+        # were previously escalated and are currently REOPENED — those stay in
+        # the Campus Admin's Action Required queue until resolved/rejected.
+        has_escalation = Request.objects.filter(
+            request_type=Request.RequestType.ESCALATION,
+            grievance_id=OuterRef('grievance_id'),
+        )
+        qs = qs.filter(
+            Q(request_type=Request.RequestType.ESCALATION)
+            | (
+                Q(
+                    request_type=Request.RequestType.REOPEN,
+                    grievance__current_status=Grievance.Status.REOPENED,
+                )
+                & Exists(has_escalation)
+            )
         ).order_by('-created_at')
 
 
@@ -1899,7 +1997,6 @@ class AdminRequestListView(generics.ListAPIView):
 
         search = self.request.query_params.get('search')
         if search:
-            from django.db.models import Q
             qs = qs.filter(
                 Q(reason__icontains=search) |
                 Q(grievance__title__icontains=search) |
@@ -2080,7 +2177,7 @@ def admin_reject_request(request, pk):
             f"Admin remark: {admin_remark}"
         )
         grievance.current_status = req_obj.original_status
-        grievance.save(update_fields=['current_status'])
+        grievance.save(update_fields=['current_status', 'updated_at'])
     else:
         # No status change — log an audit-only StatusHistory entry
         StatusHistory.objects.create(

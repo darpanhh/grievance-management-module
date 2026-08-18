@@ -139,11 +139,12 @@ class GrievanceListSerializer(SpamDecisionMixin, serializers.ModelSerializer):
     spam_status = serializers.SerializerMethodField()
     spam_confidence = serializers.SerializerMethodField()
     spam_reason = serializers.SerializerMethodField()
+    display_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Grievance
         fields = [
-            'id', 'title', 'current_status', 'category', 'category_name',
+            'id', 'title', 'current_status', 'display_status', 'category', 'category_name',
             'department', 'department_name', 'is_anonymous', 'is_sensitive',
             'is_reopened',
             'escalation_level', 'escalated_to_name',
@@ -152,6 +153,20 @@ class GrievanceListSerializer(SpamDecisionMixin, serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    def get_display_status(self, obj):
+        """Students must not see the internal ESCALATED status — mirror the
+        last visible status from the status history instead, exactly like
+        the grievance detail page."""
+        request = self.context.get('request')
+        if request and getattr(request.user, 'role', None) in ('HOD', 'CAMPUS_ADMIN', 'DEPARTMENT_ADMIN'):
+            return obj.current_status
+        if obj.current_status != Grievance.Status.ESCALATED:
+            return obj.current_status
+        last = StatusHistory.objects.filter(grievance=obj).exclude(
+            new_status=Grievance.Status.ESCALATED,
+        ).order_by('-created_at').first()
+        return last.new_status if last else obj.current_status
 
     def get_spam_status(self, obj):
         return obj.spam_status if self._can_see_spam(obj) else None
