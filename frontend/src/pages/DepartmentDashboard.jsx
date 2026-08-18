@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import SearchFilter from '../components/SearchFilter';
-import { CategoryBreakdownGraph, TrendLineGraph } from '../components/DashboardCharts';
+import { CategoryBreakdownGraph, ResolvedUnresolvedGraph, TrendLineGraph } from '../components/DashboardCharts';
 import { useAuth } from '../contexts/AuthContext';
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(date)) : '—';
@@ -25,17 +25,20 @@ const HodIcon = ({ name }) => {
 const DepartmentDashboard = () => {
   const { user } = useAuth();
   const departmentName = user?.department_name || 'Department';
-  const [activeTab, setActiveTab] = useState('ACTION_REQUIRED'); // 'ACTION_REQUIRED' | 'ALL' | 'ESCALATED' | 'RESOLVED'
+  const [activeTab, setActiveTab] = useState('ACTION_REQUIRED'); // 'ACTION_REQUIRED' | 'NEEDS_REVIEW' | 'ALL' | 'ESCALATED' | 'RESOLVED' | 'SPAM'
 
   const [grievances, setGrievances] = useState([]);
   const [metrics, setMetrics] = useState({
     total: 0,
     action_required: 0,
+    needs_review: 0,
+    spam_count: 0,
     closed_resolved: 0,
     escalated: 0,
     status_breakdown: {},
     category_breakdown: [],
     trends: {},
+    resolved_unresolved: {},
   });
 
   const [loading, setLoading] = useState(true);
@@ -85,6 +88,8 @@ const DepartmentDashboard = () => {
 
   const showAllGrievances = () => { setStatusFilter(''); setActiveTab('ALL'); scrollToWorkspace(); };
   const showActionRequired = () => { setStatusFilter(''); setActiveTab('ACTION_REQUIRED'); scrollToWorkspace(); };
+  const showNeedsReview = () => { setStatusFilter(''); setActiveTab('NEEDS_REVIEW'); scrollToWorkspace(); };
+  const showSpamQueue = () => { setStatusFilter(''); setActiveTab('SPAM'); scrollToWorkspace(); };
   const showEscalatedGrievances = () => { setStatusFilter(''); setActiveTab('ESCALATED'); scrollToWorkspace(); };
   const showResolvedGrievances = () => { setStatusFilter(''); setActiveTab('RESOLVED'); scrollToWorkspace(); };
   const showStatusGrievances = (status) => () => { setStatusFilter(status); setActiveTab('ALL'); scrollToWorkspace(); };
@@ -106,34 +111,22 @@ const DepartmentDashboard = () => {
   // A grievance that was escalated (escalation_level > 0) is never counted as
   // pending for the HOD — once forwarded to Campus Admin it is read-only.
   const wasEscalated = (g) => Number(g.escalation_level) > 0 || g.current_status === 'ESCALATED';
-  const isActionable = (g) => ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'].includes(g.current_status);
+  const isSpamHandled = (g) => g.spam_status === 'REVIEW' || g.spam_status === 'SPAM';
+  // A REJECTED grievance with a pending rejection appeal is reviewed by the
+  // HOD and belongs in Action Required.
+  const isActionable = (g) => (
+    ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'].includes(g.current_status) && !isSpamHandled(g)
+  );
 
   const displayGrievances = grievances.filter(g => {
     if (activeTab === 'ACTION_REQUIRED') return !wasEscalated(g) && isActionable(g);
+    if (activeTab === 'NEEDS_REVIEW') return g.spam_status === 'REVIEW';
+    if (activeTab === 'SPAM') return g.spam_status === 'SPAM';
     if (activeTab === 'ESCALATED') return wasEscalated(g);
     if (activeTab === 'RESOLVED') return ['RESOLVED', 'CLOSED'].includes(g.current_status);
     return true; // ALL
   });
 
-  const primaryStatusDistribution = [
-    { label: 'Submitted', value: statusCounts.SUBMITTED || 0, color: '#f59e0b', onClick: showStatusGrievances('SUBMITTED') },
-    { label: 'Under review', value: underReviewGrievances, color: '#0ea5e9', onClick: showStatusGrievances('UNDER_REVIEW') },
-    { label: 'In progress', value: inProgressGrievances, color: '#6366f1', onClick: showStatusGrievances('IN_PROGRESS') },
-    { label: 'Escalated', value: statusCounts.ESCALATED || 0, color: '#f97316', onClick: showStatusGrievances('ESCALATED') },
-    { label: 'Reopened', value: statusCounts.REOPENED || 0, color: '#7e22ce', onClick: showStatusGrievances('REOPENED') },
-    { label: 'Resolved', value: metrics.closed_resolved || 0, color: '#10b981', onClick: showResolvedGrievances },
-    { label: 'Rejected', value: statusCounts.REJECTED || 0, color: '#e11d48', onClick: showStatusGrievances('REJECTED') },
-  ];
-  const statusDistribution = primaryStatusDistribution.filter((item) => item.value > 0);
-  const distributionTotal = metrics.total || 1;
-  let distributionCursor = 0;
-  const statusGradient = statusDistribution.length
-    ? `conic-gradient(${statusDistribution.map((item) => {
-      const start = distributionCursor;
-      distributionCursor += (item.value / distributionTotal) * 100;
-      return `${item.color} ${start}% ${distributionCursor}%`;
-    }).join(', ')})`
-    : 'conic-gradient(#e2e8f0 0 100%)';
   const kpis = [
     { label: 'Total', value: metrics.total || 0, icon: 'total', tone: 'primary', onClick: showAllGrievances },
     { label: 'Submitted', value: statusCounts.SUBMITTED || 0, icon: 'pending', tone: 'primary', onClick: showStatusGrievances('SUBMITTED') },
@@ -167,15 +160,9 @@ const DepartmentDashboard = () => {
           ))}
         </section>
 
-        <section className="admin-charts-section" aria-label="Grievance analytics">
+        <section className="admin-charts-section hod-analytics" aria-label="Grievance analytics">
           <div className="admin-charts-top-row">
-            <article className="admin-chart-card status-chart-card">
-              <div className="admin-chart-heading"><div><h2>Grievances by Status</h2></div></div>
-              <div className="admin-status-chart-body">
-                <div className="admin-donut" style={{ background: statusGradient }} role="img" aria-label={`${metrics.total || 0} total grievances`}><div><strong>{metrics.total || 0}</strong><span>Total</span></div></div>
-                <div className="admin-chart-legend">{statusDistribution.length ? statusDistribution.map((item) => <button type="button" key={item.label} onClick={item.onClick}><i style={{ background: item.color, boxShadow: `0 0 0 3px ${item.color}26` }} /><span>{item.label}</span><strong style={{ background: `${item.color}1f`, color: item.color }}>{item.value}</strong></button>) : <p>No grievance data yet.</p>}</div>
-              </div>
-            </article>
+            <ResolvedUnresolvedGraph data={metrics.resolved_unresolved} />
             <CategoryBreakdownGraph data={metrics.category_breakdown} />
           </div>
           <div className="admin-charts-bottom-row">
@@ -184,7 +171,7 @@ const DepartmentDashboard = () => {
         </section>
 
         <div className="admin-workspace-label" ref={workspaceRef}>
-          <div><h2>{activeTab === 'ACTION_REQUIRED' ? 'Action Required' : activeTab === 'ESCALATED' ? 'Escalated Grievances Flow' : activeTab === 'RESOLVED' ? 'Resolved Grievances' : 'All Grievances'}</h2></div>
+          <div><h2>{activeTab === 'ACTION_REQUIRED' ? 'Action Required' : activeTab === 'NEEDS_REVIEW' ? 'Spam Needs Review' : activeTab === 'SPAM' ? 'Spam Archive' : activeTab === 'ESCALATED' ? 'Escalated Grievances Flow' : activeTab === 'RESOLVED' ? 'Resolved Grievances' : 'All Grievances'}</h2></div>
           
         </div>
 
@@ -195,6 +182,12 @@ const DepartmentDashboard = () => {
             onClick={showActionRequired}
           >
             Action Required <span className="hod-tab-badge">{metrics.action_required || 0}</span>
+          </button>
+          <button
+            className={`hod-tab-btn ${activeTab === 'NEEDS_REVIEW' ? 'active' : ''}`}
+            onClick={showNeedsReview}
+          >
+            Needs Review ({metrics.needs_review || 0})
           </button>
           <button
             className={`hod-tab-btn ${activeTab === 'ALL' ? 'active' : ''}`}
@@ -213,6 +206,12 @@ const DepartmentDashboard = () => {
             onClick={showResolvedGrievances}
           >
             Resolved ({metrics.closed_resolved || 0})
+          </button>
+          <button
+            className={`hod-tab-btn ${activeTab === 'SPAM' ? 'active' : ''}`}
+            onClick={showSpamQueue}
+          >
+            Spam ({metrics.spam_count || 0})
           </button>
         </nav>
 
@@ -236,7 +235,7 @@ const DepartmentDashboard = () => {
         ) : displayGrievances.length === 0 ? (
           <div className="dashboard-state">
             <h2>No Grievances Found</h2>
-            <p>{activeTab === 'ACTION_REQUIRED' ? 'Great job! There are no pending grievances needing HOD action right now.' : 'No grievances match the current filter criteria.'}</p>
+            <p>{activeTab === 'ACTION_REQUIRED' ? 'Great job! There are no pending grievances needing HOD action right now.' : activeTab === 'NEEDS_REVIEW' ? 'No AI-flagged submissions are awaiting a spam decision.' : activeTab === 'SPAM' ? 'No grievances have been confirmed as spam.' : 'No grievances match the current filter criteria.'}</p>
           </div>
         ) : (
           <div className="grievance-card-list">
@@ -260,9 +259,9 @@ const DepartmentDashboard = () => {
                 <div className="hod-card-actions">
                   <Link
                     to={`/grievances/${grievance.id}`}
-                    className={`btn ${activeTab === 'ACTION_REQUIRED' ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                    className={`btn ${activeTab === 'ALL' || activeTab === 'ESCALATED' || activeTab === 'RESOLVED' || activeTab === 'SPAM' ? 'btn-outline' : 'btn-primary'} btn-sm`}
                   >
-                    {activeTab === 'ACTION_REQUIRED' ? 'Review & Update Status' : 'View Full Details'}
+                    {activeTab === 'ACTION_REQUIRED' ? 'Review & Update Status' : activeTab === 'NEEDS_REVIEW' ? 'Review Spam Flag' : 'View Full Details'}
                   </Link>
                 </div>
               </article>

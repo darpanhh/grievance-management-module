@@ -8,11 +8,6 @@ import { ReminderCommentList, ReminderCommentForm } from '../components/Reminder
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(date)) : '—';
 const statusLabel = (status) => status ? status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Initial submission';
-const responderLabel = (response) => {
-  if (response.responder_role === 'Head of Department') return 'HOD';
-  if (response.responder_role === 'Campus Admin') return 'Campus Admin';
-  return response.responder_name || 'Department Representative';
-};
 const isImageAttachment = (attachment) => (attachment.file_type || '').toLowerCase().startsWith('image/');
 const canPreviewAttachment = (attachment) => Boolean(attachment?.file) && (isImageAttachment(attachment) || (attachment.file_type || '').toLowerCase().includes('pdf'));
 const previewKindFromUrl = (url) => {
@@ -34,13 +29,14 @@ const GrievanceDetail = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState(null);
-  const [requestModalType, setRequestModalType] = useState(null); // 'REJECTION_APPEAL' | 'REOPEN'
+  const [requestModalType, setRequestModalType] = useState(null); // 'REOPEN'
   const [previewId, setPreviewId] = useState(null);
   const [revealSensitive, setRevealSensitive] = useState(false);
   const [content, setContent] = useState('');
   const [escalateReason, setEscalateReason] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('UNDER_REVIEW');
   const [submitting, setSubmitting] = useState(false);
+  const [spamSubmitting, setSpamSubmitting] = useState(false);
 
   const loadGrievance = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -61,13 +57,21 @@ const GrievanceDetail = () => {
   const previewAttachments = [
     ...(grievance?.attachments || []).filter((a) => a.file && canPreviewAttachment(a)),
     ...(grievance?.reopen_attachments || []).filter((a) => a.file && canPreviewAttachment(a)),
+    ...(grievance?.requests || []).filter(r => r.attachment && r.request_type !== 'ESCALATION').map(r => ({
+      id: `req-${r.id}`,
+      file: r.attachment,
+      file_name: r.attachment.split('/').pop() || 'Supporting Document',
+    })),
   ];
-  const previewIndex = previewId !== null ? previewAttachments.findIndex((a) => `reopen-${a.id}` === previewId || a.id === previewId) : -1;
+  const previewIndex = previewId !== null ? previewAttachments.findIndex((a) => {
+    if (previewId.startsWith('req-')) return a.id === previewId;
+    return `reopen-${a.id}` === previewId || a.id === previewId;
+  }) : -1;
   const previewAttachment = previewIndex >= 0 ? previewAttachments[previewIndex] : null;
 
   const closePreview = () => setPreviewId(null);
-  const prevPreview = () => { if (previewAttachments.length > 1) { const prev = previewAttachments[(previewIndex - 1 + previewAttachments.length) % previewAttachments.length]; setPreviewId((grievance?.attachments || []).includes(prev) ? prev.id : `reopen-${prev.id}`); } };
-  const nextPreview = () => { if (previewAttachments.length > 1) { const next = previewAttachments[(previewIndex + 1) % previewAttachments.length]; setPreviewId((grievance?.attachments || []).includes(next) ? next.id : `reopen-${next.id}`); } };
+  const prevPreview = () => { if (previewAttachments.length > 1) { const prev = previewAttachments[(previewIndex - 1 + previewAttachments.length) % previewAttachments.length]; setPreviewId(prev.id); } };
+  const nextPreview = () => { if (previewAttachments.length > 1) { const next = previewAttachments[(previewIndex + 1) % previewAttachments.length]; setPreviewId(next.id); } };
 
   useEffect(() => {
     if (previewAttachment === null) return;
@@ -77,7 +81,23 @@ const GrievanceDetail = () => {
   }, [previewAttachment, previewIndex]);
 
   const closeModal = () => { setModal(null); setContent(''); setEscalateReason(''); setSelectedStatus('UNDER_REVIEW'); };
-  const openModal = (action) => { setToast(''); setContent(''); setEscalateReason(''); setSelectedStatus(action === 'respond' && status === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'UNDER_REVIEW'); setModal(action); };
+  const openModal = (action) => {
+    setToast('');
+    setContent('');
+    setEscalateReason('');
+    let defaultStatus = 'UNDER_REVIEW';
+    if (action === 'respond' && status) {
+      if (isAdminRequestReview) {
+        defaultStatus = status === 'UNDER_REVIEW' ? 'IN_PROGRESS' : 'UNDER_REVIEW';
+      } else if (status === 'IN_PROGRESS') {
+        defaultStatus = 'RESOLVED';
+      } else if (status === 'UNDER_REVIEW') {
+        defaultStatus = 'IN_PROGRESS';
+      }
+    }
+    setSelectedStatus(defaultStatus);
+    setModal(action);
+  };
 
   const actionError = (requestError) => {
     const data = requestError.response?.data;
@@ -113,7 +133,9 @@ const GrievanceDetail = () => {
     try {
       const payload = actualAction === 'respond'
         ? { content: content.trim(), status: selectedStatus }
-        : { reason: escalateReason.trim() };
+        : actualAction === 'hodEscalate'
+          ? { reason: escalateReason.trim() }
+          : {};
       await api.post(endpoints[actualAction], payload);
       const messages = {
         respond: `Response posted. Status updated to ${statusLabel(selectedStatus)}.`,
@@ -131,6 +153,21 @@ const GrievanceDetail = () => {
     }
   };
 
+  const handleSpamReview = async (decision) => {
+    setSpamSubmitting(true);
+    setError('');
+    setToast('');
+    try {
+      const { data } = await api.post(`grievances/${id}/spam-review/`, { decision });
+      setToast(data.message || (decision === 'SPAM' ? 'Grievance marked as spam.' : 'Grievance accepted as genuine.'));
+      await loadGrievance(false);
+    } catch (requestError) {
+      setError(actionError(requestError));
+    } finally {
+      setSpamSubmitting(false);
+    }
+  };
+
   if (loading) return <div className="dashboard-state"><div className="spinner" /><p>Loading grievance…</p></div>;
   if (error === 'not-found') return <div className="dashboard-state error-state"><h1>Grievance not found</h1><p>This grievance does not exist or you do not have access to it.</p><Link className="btn btn-primary" to={backTo}>{backLabel}</Link></div>;
   if (!grievance) return <div className="dashboard-state error-state"><h1>Unable to load grievance</h1><p>{error}</p><button className="btn btn-primary" onClick={() => loadGrievance()}>Try again</button></div>;
@@ -142,13 +179,17 @@ const GrievanceDetail = () => {
   const userDeptId = user?.department?.id || user?.department;
   const grievanceDeptId = grievance?.department?.id || grievance?.department;
   const isSameDept = Boolean(userDeptId && grievanceDeptId && Number(userDeptId) === Number(grievanceDeptId));
+  const isStaff = role === 'STAFF';
+  const isDepartmentOfficer = (isHOD || isStaff) && (isSameDept || !userDeptId || !grievanceDeptId);
+  const spamStatus = grievance.spam_status || null;
+  const isSpamHandled = ['REVIEW', 'SPAM'].includes(spamStatus);
 
   // Submitter capabilities
   const isSubmitter = Number(grievance.submitter) === Number(user?.id);
   const needsSensitiveGate = Boolean(grievance.is_sensitive) && !isSubmitter && !revealSensitive;
   const hasReopenedOnce = Boolean(grievance.is_reopened || grievance.requests?.some(r => r.request_type === 'REOPEN'));
-  const canSubmitterReopen = isSubmitter && !hasReopenedOnce && (status === 'RESOLVED' || status === 'REJECTED');
-  const canSubmitterAppealRejection = isSubmitter && status === 'REJECTED';
+  const spamRejected = Boolean(grievance.spam_rejected);
+  const canSubmitterReopen = isSubmitter && !hasReopenedOnce && !spamRejected && (status === 'RESOLVED' || status === 'REJECTED');
   const canSubmitterClose = isSubmitter && status === 'RESOLVED';
 
   // HOD capabilities
@@ -159,11 +200,12 @@ const GrievanceDetail = () => {
   // Once forwarded to Campus Admin (ESCALATED or a pending escalation), the
   // HOD can only view the grievance — respond/update is disabled.
   const hodBlockedAfterEscalation = status === 'ESCALATED' || hasPendingEscalation || Number(grievance?.escalation_level) > 0;
-  const canHodAct = isHOD && !hodBlockedAfterEscalation && ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'].includes(status) && (isSameDept || !userDeptId || !grievanceDeptId);
+  const canHodAct = isHOD && !hodBlockedAfterEscalation && !isSpamHandled && ['SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REOPENED'].includes(status) && (isSameDept || !userDeptId || !grievanceDeptId);
   const canRespond = canHodAct
     || (isAdmin && !adminTerminalStatus && status !== 'REOPENED' && (status === 'ESCALATED' || hasPendingEscalation));
   const canHodEscalate = canHodAct;
 
+  // Campus Admin reviews only escalations.
   const isAdminRequestReview = isAdmin && !adminTerminalStatus && status !== 'REOPENED' && (status === 'ESCALATED' || hasPendingEscalation);
 
   const pendingRequest = grievance.requests?.find(r => r.status === 'PENDING');
@@ -194,7 +236,7 @@ const GrievanceDetail = () => {
                   <span className="dot">•</span>
                   <span><strong>Category:</strong> {grievance.category_name || 'Uncategorized'}</span>
                   <span className="dot">•</span>
-                  <span>Submitted by: <strong>{grievance.is_anonymous ? 'Anonymous' : grievance.submitter_name || 'Not available'}</strong></span>
+                  <span><strong>Submitted by:</strong> {grievance.is_anonymous ? 'Anonymous' : grievance.submitter_name || 'Not available'}</span>
                   <span className="dot">•</span>
                   <span>Submitted on: <time>{formatDate(grievance.created_at)}</time></span>
                 </div>
@@ -217,19 +259,12 @@ const GrievanceDetail = () => {
                   </ul>
                 ) : <p className="empty-note">No files were attached to this grievance.</p>}
               </section>
-              <section className="detail-section">
-                <h2 className="section-title"><span className="section-title-accent" />Official Responses</h2>
-                {grievance.responses?.length ? (
-                  <div className="response-list">
-                    {[...grievance.responses].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((response) => (
-                      <article key={response.id} className="response-card">
-                        <header><strong>{responderLabel(response)}</strong><time>{formatDate(response.created_at)}</time></header>
-                        <p>{response.content}</p>
-                      </article>
-                    ))}
-                  </div>
-                ) : <p className="empty-note">No official response has been posted yet.</p>}
-              </section>
+              <SpamReviewCard
+                grievance={grievance}
+                canReview={grievance.spam_status === 'REVIEW' && isDepartmentOfficer}
+                submitting={spamSubmitting}
+                onReview={handleSpamReview}
+              />
               <section className="detail-section">
                 <h2 className="section-title"><span className="section-title-accent" />Status History & Audit Trail</h2>
                 {grievance.status_history?.length ? (
@@ -238,7 +273,6 @@ const GrievanceDetail = () => {
                       <div key={entry.id || index} className="timeline-item">
                         <div className="timeline-marker-col">
                           <span className="timeline-marker-dot" />
-                          {index < grievance.status_history.length - 1 && <span className="timeline-line" />}
                         </div>
                         <div className="timeline-card">
                           <div className="timeline-card-header">
@@ -335,7 +369,7 @@ const GrievanceDetail = () => {
               <section className="detail-section">
                 <h2 className="section-title">
                   <span className="section-title-accent" />
-                  Student Reopen Requests
+                  Student Requests & Appeals
                 </h2>
                 <div className="request-audit-list">
                   {grievance.requests.filter(r => r.request_type !== 'ESCALATION').map((req) => (
@@ -369,18 +403,9 @@ const GrievanceDetail = () => {
                       {req.attachment && (
                         <div className="request-attachment-snippet">
                           <span>Supporting Document:</span>
-                          <button className="btn btn-outline btn-sm request-preview-toggle" onClick={() => setPreviewId(previewId === `req-${req.id}` ? null : `req-${req.id}`)}>
-                            {previewId === `req-${req.id}` ? 'Close' : 'Preview'}
+                          <button className="btn btn-outline btn-sm request-preview-toggle" onClick={() => setPreviewId(`req-${req.id}`)}>
+                            Preview
                           </button>
-                        </div>
-                      )}
-                      {req.attachment && previewId === `req-${req.id}` && (
-                        <div className="attachment-inline-preview">
-                          {previewKindFromUrl(req.attachment) === 'image' ? (
-                            <img src={req.attachment} alt="Supporting document preview" />
-                          ) : (
-                            <iframe src={`${req.attachment}#toolbar=0&download=0`} title="Supporting document preview" />
-                          )}
                         </div>
                       )}
                       <div className="request-audit-meta">
@@ -396,25 +421,12 @@ const GrievanceDetail = () => {
 
             <ReminderCommentList grievance={grievance} />
 
-            <section className="detail-section">
-              <h2 className="section-title">
-                <span className="section-title-accent" />
-                Official Responses
-              </h2>
-              {grievance.responses?.length ? (
-                <div className="response-list">
-                  {[...grievance.responses].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((response) => (
-                    <article key={response.id} className="response-card">
-                      <header>
-                        <strong>{responderLabel(response)}</strong>
-                        <time>{formatDate(response.created_at)}</time>
-                      </header>
-                      <p>{response.content}</p>
-                    </article>
-                  ))}
-                </div>
-              ) : <p className="empty-note">No official response has been posted yet.</p>}
-            </section>
+            <SpamReviewCard
+              grievance={grievance}
+              canReview={grievance.spam_status === 'REVIEW' && isDepartmentOfficer}
+              submitting={spamSubmitting}
+              onReview={handleSpamReview}
+            />
 
             <section className="detail-section">
               <h2 className="section-title">
@@ -427,7 +439,6 @@ const GrievanceDetail = () => {
                     <div key={entry.id || index} className="timeline-item">
                       <div className="timeline-marker-col">
                         <span className="timeline-marker-dot" />
-                        {index < grievance.status_history.length - 1 && <span className="timeline-line" />}
                       </div>
                       <div className="timeline-card">
                         <div className="timeline-card-header">
@@ -468,28 +479,6 @@ const GrievanceDetail = () => {
 
             {/* Bottom Grievance Controls & Actions */}
 
-            {/* Rejected Grievance Appeal Banner */}
-            {status === 'REJECTED' && isSubmitter && (
-              <div className="hod-action-panel warning-state" style={{ borderColor: '#fde68a', background: '#fffbeb' }}>
-                <div className="hod-action-panel-header">
-                  <div>
-                    <h3 style={{ color: '#92400e' }}>Grievance Rejected</h3>
-                    <p style={{ color: '#b45309' }}>{hasReopenedOnce ? 'This grievance has already been reopened once and cannot be reopened again.' : 'If you disagree with the department decision, you can reopen the grievance and send it back to the assigned department for further review. If satisfied, you may close it.'}</p>
-                  </div>
-                </div>
-                <div className="detail-actions">
-                  {!hasReopenedOnce && (
-                    <button className="btn btn-outline" onClick={() => setRequestModalType('REOPEN')} disabled={Boolean(pendingRequest)}>
-                      {pendingRequest ? 'Reopen Request Pending' : 'Reopen & Send to Department'}
-                    </button>
-                  )}
-                  <button className="btn btn-primary" onClick={() => runAction('close')} disabled={submitting}>
-                    Close Grievance
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* HOD / Campus Admin Action Panel */}
             {canRespond && (
               <div className="hod-action-panel">
@@ -497,7 +486,7 @@ const GrievanceDetail = () => {
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                   <div>
                     <h3>{isAdminRequestReview ? 'Campus Admin Action' : 'Department HOD Action & Status Management'}</h3>
-                    <p>Provide an official response and update the status for this grievance (Currently: <strong>{statusLabel(status)}</strong>).</p>
+                    <p>Provide an official response and update the status for this grievance.</p>
                   </div>
                 </div>
                 <div className="detail-actions">
@@ -506,8 +495,8 @@ const GrievanceDetail = () => {
               </div>
             )}
 
-            {/* Submitter Actions - only show for RESOLVED (REJECTED has its own banner above) */}
-            {canSubmitterClose && (
+            {/* Submitter Actions - RESOLVED (reopen + close) or REJECTED (reopen only) */}
+            {canSubmitterClose || canSubmitterReopen ? (
               <div className="hod-action-panel">
                 <div className="hod-action-panel-header">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
@@ -517,17 +506,19 @@ const GrievanceDetail = () => {
                   </div>
                 </div>
                 <div className="detail-actions">
-                  {!hasReopenedOnce && (
+                  {!hasReopenedOnce && canSubmitterReopen && (
                     <button className="btn btn-outline" onClick={() => setRequestModalType('REOPEN')} disabled={Boolean(pendingRequest)}>
                       {pendingRequest ? 'Reopen Request Pending' : 'Reopen & Send to Department'}
                     </button>
                   )}
-                  <button className="btn btn-primary" onClick={() => runAction('close')} disabled={submitting}>
-                    Close Grievance
-                  </button>
+                  {canSubmitterClose && (
+                    <button className="btn btn-primary" onClick={() => runAction('close')} disabled={submitting}>
+                      Close Grievance
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
+            ) : null}
           </article>
         )}
 
@@ -546,24 +537,25 @@ const GrievanceDetail = () => {
                     value={selectedStatus}
                     onChange={(e) => setSelectedStatus(e.target.value)}
                   >
-                    {isAdminRequestReview ? (
-                      <>
-                        <option value="UNDER_REVIEW">Under Review (Reviewing Submission)</option>
-                        <option value="IN_PROGRESS">In Progress (Active Investigation)</option>
-                        <option value="RESOLVED">Resolved (Mark Issue as Solved)</option>
-                        <option value="REJECTED">Rejected (Decline / Reject Grievance)</option>
-                      </>
-                    ) : (
-                      <>
-                        {status !== 'IN_PROGRESS' && (
-                          <option value="UNDER_REVIEW">Under Review (Reviewing Submission)</option>
-                        )}
-                        <option value="IN_PROGRESS">In Progress (Active Investigation)</option>
-                        <option value="RESOLVED">Resolved (Mark Issue as Solved)</option>
-                        <option value="REJECTED">Rejected (Decline / Reject Grievance)</option>
-                        <option value="ESCALATED">Escalated (Forward to Campus Admin)</option>
-                      </>
-                    )}
+                    {(isAdminRequestReview
+                      ? [
+                          ['UNDER_REVIEW', 'Under Review (Reviewing Submission)'],
+                          ['IN_PROGRESS', 'In Progress (Active Investigation)'],
+                          ['RESOLVED', 'Resolved (Mark Issue as Solved)'],
+                          ['REJECTED', 'Rejected (Decline / Reject Grievance)'],
+                        ]
+                      : [
+                          ...(status !== 'IN_PROGRESS' ? [['UNDER_REVIEW', 'Under Review (Reviewing Submission)']] : []),
+                          ['IN_PROGRESS', 'In Progress (Active Investigation)'],
+                          ['RESOLVED', 'Resolved (Mark Issue as Solved)'],
+                          ['REJECTED', 'Rejected (Decline / Reject Grievance)'],
+                          ['ESCALATED', 'Escalated (Forward to Campus Admin)'],
+                        ]
+                    )
+                      .filter(([optionValue]) => optionValue !== status)
+                      .map(([optionValue, optionLabel]) => (
+                        <option key={optionValue} value={optionValue}>{optionLabel}</option>
+                      ))}
                   </select>
 
                   <div className="status-transition-preview">
@@ -607,7 +599,7 @@ const GrievanceDetail = () => {
             <button className="preview-nav preview-prev" onClick={(e) => { e.stopPropagation(); if (previewIndex > 0) prevPreview(); }} disabled={previewIndex <= 0} aria-label="Previous">&lsaquo;</button>
             <button className="preview-nav preview-next" onClick={(e) => { e.stopPropagation(); if (previewIndex < previewAttachments.length - 1) nextPreview(); }} disabled={previewIndex >= previewAttachments.length - 1} aria-label="Next">&rsaquo;</button>
             <div className="preview-content" onClick={(e) => e.stopPropagation()}>
-              {isImageAttachment(previewAttachment) ? (
+              {isImageAttachment(previewAttachment) || previewKindFromUrl(previewAttachment.file) === 'image' ? (
                 <img src={previewAttachment.file} alt={previewAttachment.file_name} />
               ) : (
                 <iframe src={`${previewAttachment.file}#toolbar=0&download=0`} title={previewAttachment.file_name} />
@@ -639,5 +631,58 @@ const GrievanceDetail = () => {
     </section>
   );
 };
+
+function SpamReviewCard({ grievance, canReview, submitting, onReview }) {
+  const spamStatus = grievance.spam_status;
+  if (!spamStatus) return null;
+
+  const tones = {
+    REVIEW: 'review',
+    SPAM: 'spam',
+    NOT_SPAM: 'accepted',
+  };
+  const labels = {
+    REVIEW: 'AI Flagged: Possible Spam',
+    SPAM: 'Marked as Spam',
+    NOT_SPAM: 'Accepted as Genuine',
+  };
+
+  return (
+    <section className="detail-section" aria-label="AI spam detection">
+      <h2 className="section-title"><span className="section-title-accent" />AI Spam Detection</h2>
+      <div className={`ai-spam-card ${tones[spamStatus]}`}>
+        <div className="ai-spam-row">
+          <span className="ai-spam-label">{labels[spamStatus]}</span>
+          {spamStatus !== 'REVIEW' && (grievance.spam_reviewed_by_name || grievance.spam_reviewed_at) && (
+            <span className="ai-spam-reviewer">
+              {grievance.spam_reviewed_by_name ? `by ${grievance.spam_reviewed_by_name}` : ''}
+              {grievance.spam_reviewed_at ? ` · ${formatDate(grievance.spam_reviewed_at)}` : ''}
+            </span>
+          )}
+        </div>
+        {spamStatus === 'REVIEW' && canReview && (
+          <div className="ai-spam-actions">
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={() => onReview('SPAM')}
+              disabled={submitting}
+            >
+              {submitting ? 'Saving…' : 'Mark as Spam'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => onReview('NOT_SPAM')}
+              disabled={submitting}
+            >
+              {submitting ? 'Saving…' : 'Accept'}
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 export default GrievanceDetail;

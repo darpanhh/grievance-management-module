@@ -3033,10 +3033,6 @@
 }
 
 /* Grievance detail page typography & layout */
-.detail-page-container {
-  max-width: 900px !important;
-}
-
 .grievance-detail,
 .grievance-detail * {
   font-family: var(--sans) !important;
@@ -3195,41 +3191,61 @@
 
 /* Timeline & Audit Trail Redesign */
 .audit-timeline {
+  --tl-dot-col: 24px;
+  --tl-dot-pad: 1.45rem;
+  --tl-dot: 10px;
+  --tl-line-w: 2px;
+  --tl-gap: 1.1rem;
   display: grid;
-  gap: 1rem;
+  gap: var(--tl-gap);
   position: relative;
   padding-left: 0.25rem;
 }
 
 .timeline-item {
   display: grid;
-  grid-template-columns: 24px 1fr;
-  gap: 0.85rem;
+  grid-template-columns: var(--tl-dot-col) minmax(0, 1fr);
+  gap: 0.9rem;
   align-items: stretch;
+  position: relative;
 }
 
 .timeline-marker-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   position: relative;
-  padding-top: 1.45rem;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: var(--tl-dot-pad);
+}
+
+/* Vertical connector segment: starts at this event's dot, runs through the
+   spacing and ends exactly at the next event's dot, behind the dots. */
+.timeline-marker-col::after {
+  content: '';
+  position: absolute;
+  top: calc(var(--tl-dot-pad) + var(--tl-dot) / 2);
+  height: calc(100% + var(--tl-gap));
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--tl-line-w);
+  background: #e6eaf1;
+  z-index: 0;
+}
+
+/* Stop at the final dot: no connector below the last event. */
+.timeline-item:last-child .timeline-marker-col::after {
+  display: none;
 }
 
 .timeline-marker-dot {
-  width: 12px;
-  height: 12px;
+  position: relative;
+  z-index: 2;
+  width: var(--tl-dot);
+  height: var(--tl-dot);
   border-radius: 50%;
   background: var(--primary);
-  box-shadow: 0 0 0 3px #e0e7ff;
-  z-index: 2;
-}
-
-.timeline-line {
-  width: 2px;
-  background: #e2e8f0;
-  flex: 1;
-  margin-top: 4px;
+  box-shadow: 0 0 0 3px #fff, 0 1px 3px rgba(15, 23, 42, 0.18);
 }
 
 .timeline-card {
@@ -3847,6 +3863,138 @@
 .hod-tab-btn.active .hod-tab-badge {
   background: var(--primary);
   color: #fff;
+}
+
+.hod-tab-badge.spam-badge {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.hod-tab-btn.active .hod-tab-badge.spam-badge {
+  background: #92400e;
+  border-color: #92400e;
+  color: #fff;
+}
+
+/* ====================== */
+/* Spam review tables (department dashboard) */
+.spam-review-table-wrap {
+  overflow-x: auto;
+}
+
+.spam-review-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: .9rem;
+}
+
+.spam-review-table th,
+.spam-review-table td {
+  padding: .8rem .9rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.spam-review-table th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  font-weight: 700;
+}
+
+.spam-review-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.spam-review-table .spam-table-title {
+  margin: .2rem 0 0;
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--primary-dark);
+}
+
+.spam-review-table .spam-table-reason {
+  color: #64748b;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ====================== */
+/* AI spam detection card (grievance detail) */
+.ai-spam-card {
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid #f59e0b;
+  border-radius: var(--radius-sm);
+  padding: .85rem 1rem;
+  display: grid;
+  gap: .7rem;
+}
+
+.ai-spam-card.spam { border-left-color: #dc2626; }
+.ai-spam-card.accepted { border-left-color: #10b981; }
+
+.ai-spam-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+}
+
+.ai-spam-label {
+  font-weight: 700;
+  font-size: .92rem;
+  color: var(--primary-dark);
+}
+
+.ai-spam-card.spam .ai-spam-label { color: #b91c1c; }
+.ai-spam-card.accepted .ai-spam-label { color: #047857; }
+
+.ai-spam-confidence {
+  font-size: .78rem;
+  font-weight: 700;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: .15rem .55rem;
+  white-space: nowrap;
+}
+
+.ai-spam-reviewer {
+  font-size: .8rem;
+  color: #64748b;
+}
+
+.ai-spam-actions {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+/* ====================== */
+/* Compact spam aggregate (admin dashboard header) */
+.spam-stats-chip {
+  align-self: center;
+  font-size: .84rem;
+  font-weight: 700;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: .35rem .8rem;
+  white-space: nowrap;
 }
 
 .hod-grievance-card {
@@ -5594,6 +5742,7 @@
   }
 
   .detail-page-container .timeline-item {
+    --tl-dot-col: 16px;
     grid-template-columns: 16px 1fr;
     gap: .6rem;
   }
@@ -5676,6 +5825,11 @@
 @media (max-width: 400px) {
   .detail-page-container .detail-meta {
     grid-template-columns: 1fr;
+  }
+
+  .detail-page-container .audit-timeline,
+  .detail-page-container .timeline-marker-col {
+    --tl-dot-pad: 1.35rem;
   }
 
   .detail-page-container .timeline-marker-col {
@@ -5856,6 +6010,7 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   padding: 1.25rem;
+  margin-bottom: 1rem;
   box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.04);
   display: flex;
   flex-direction: column;
@@ -6438,10 +6593,31 @@
 .track-result .detail-section {
   min-width: 0;
   margin-top: 0;
-  padding: 1.1rem;
+  padding: 1.35rem;
   border: 1px solid #e8edf4;
-  border-radius: 12px;
-  background: #fbfcfe;
+  border-radius: 16px;
+  background: #fff;
+}
+
+/* Keep Status History & Audit Trail identical to GrievanceDetail */
+.track-result .detail-section>.section-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: normal;
+  margin: 0 0 .25rem 0;
+}
+
+.track-result .timeline-timestamp {
+  font-size: .76rem;
+}
+
+.track-result .actor-badge {
+  font-size: .8rem;
+}
+
+.track-result .timeline-remarks-box {
+  font-size: .84rem;
 }
 
 @media (max-width: 1024px) {
@@ -9616,6 +9792,37 @@
   flex-shrink: 0;
 }
 
+/* Generic request badge used inside request-audit-header */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: .2rem .55rem;
+  border-radius: 9999px;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.badge--pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge--approved,
+.badge--forwarded {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge--denied,
+.badge--rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
   .sd-hero-inner {
@@ -11281,6 +11488,20 @@
   grid-template-columns: 1fr;
 }
 
+.admin-charts-bottom-row.analytics-split {
+  grid-template-columns: 2fr 3fr;
+  gap: 1.25rem;
+}
+
+.admin-charts-bottom-row.analytics-split .admin-chart-card {
+  min-height: 440px;
+}
+
+/* Department HOD dashboard: all three chart cards share the same height. */
+.hod-analytics .admin-chart-card {
+  min-height: 440px;
+}
+
 /* ── Chart Card (matches existing .hod-summary-card style) ── */
 .admin-chart-card {
   background: var(--card-bg, #fff);
@@ -11291,16 +11512,17 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  min-height: 220px;
+  min-height: 320px;
 }
 
 /* ── Chart Heading ── */
 .admin-chart-heading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+  min-height: 34px;
 }
 
 .admin-chart-heading>div>span {
@@ -11383,7 +11605,7 @@
 
 /* Category card: let the card grow to fit every category — no scrolling. */
 .category-chart-card {
-  gap: 0.6rem;
+  gap: 1rem;
 }
 
 .chart-bar-row {
@@ -11467,16 +11689,22 @@
   text-align: right;
 }
 
-/* ── Trend Line Chart ── */
-.trend-chart-card {
-  min-height: 300px;
+/* ── Resolved vs Unresolved Comparison Chart ── */
+.resolved-unresolved-body {
+  position: relative;
+  flex: 1;
+  height: 220px;
+  min-height: 0;
+  padding: 0.25rem 0 0.4rem;
 }
 
+/* ── Trend Line Chart ── */
 .trend-title-wrap {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  gap: 0.6rem;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .trend-header-hover-pill {
@@ -11547,12 +11775,16 @@
 .trend-chart-wrapper {
   position: relative;
   width: 100%;
+  height: auto;
+  margin-top: 0;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
 .trend-svg {
   width: 100%;
-  height: 220px;
+  height: 100%;
   display: block;
 }
 
@@ -11654,7 +11886,8 @@
 
 /* ── Responsive ── */
 @media (max-width: 900px) {
-  .admin-charts-top-row {
+  .admin-charts-top-row,
+  .admin-charts-bottom-row.analytics-split {
     grid-template-columns: 1fr;
   }
 

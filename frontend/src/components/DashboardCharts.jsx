@@ -1,4 +1,43 @@
 import { useState } from "react";
+import { Bar } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  BarElement,
+  CategoryScale,
+  LinearScale,
+  Tooltip,
+} from "chart.js";
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip);
+
+// Draws the percentage above each bar.  Totals are read from the chart
+// options so this plugin can stay registered once at module scope
+// (inline plugin props are not reliably re-attached).
+const resolvedUnresolvedLabels = {
+  id: "resolvedUnresolvedLabels",
+  afterDatasetsDraw(chart) {
+    const totals = chart.options.plugins?.resolvedUnresolvedLabels;
+    if (!totals) return;
+    const { ctx } = chart;
+    const meta = chart.getDatasetMeta(0);
+    const colors = chart.data.datasets[0].backgroundColor;
+    const font = "'Segoe UI', Roboto, -apple-system, sans-serif";
+    meta.data.forEach((bar, index) => {
+      const value = chart.data.datasets[0].data[index];
+      if (typeof value !== "number" || value <= 0) return;
+      const total = totals.resolved + totals.unresolved;
+      const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.fillStyle = colors[index];
+      ctx.font = `700 12px ${font}`;
+      ctx.fillText(`${pct}%`, bar.x, bar.y - 12);
+      ctx.restore();
+    });
+  },
+};
+
+ChartJS.register(resolvedUnresolvedLabels);
 
 /* Shared analytics chart components for Campus Admin and Department dashboards. */
 
@@ -74,10 +113,12 @@ const TrendLineGraph = ({ trends = {}, title = "Grievance Trend" }) => {
           )}
         </div>
         <div className="trend-header-right">
-          <div className="trend-legend">
-            <span className="legend-item total"><i /> Total Grievances</span>
-            <span className="legend-item resolved"><i /> Resolved</span>
-          </div>
+          {!hoverItem && (
+            <div className="trend-legend">
+              <span className="legend-item total"><i /> Total Grievances</span>
+              <span className="legend-item resolved"><i /> Resolved</span>
+            </div>
+          )}
           <select className="chart-select-dropdown" value={trendRange} onChange={(e) => setTrendRange(e.target.value)} aria-label="Select trend time range">
             <option value="7d">7 Days</option>
             <option value="15d">15 Days</option>
@@ -130,4 +171,95 @@ const TrendLineGraph = ({ trends = {}, title = "Grievance Trend" }) => {
   );
 };
 
-export { CategoryBreakdownGraph, TrendLineGraph };
+const ResolvedUnresolvedGraph = ({ data = {} }) => {
+  const [range, setRange] = useState("6m");
+  const rangeData = data[range] || {};
+  const resolvedCount = Number(rangeData.resolved) || 0;
+  const unresolvedCount = Number(rangeData.unresolved) || 0;
+  const total = resolvedCount + unresolvedCount;
+  const pctOf = (value) => (total > 0 ? Math.round((value / total) * 100) : 0);
+
+  const chartData = {
+    labels: ["Resolved", "Unresolved"],
+    datasets: [
+      {
+        data: [resolvedCount, unresolvedCount],
+        backgroundColor: ["#10b981", "#6366f1"],
+        hoverBackgroundColor: ["#059669", "#4f46e5"],
+        borderRadius: 0,
+        borderSkipped: false,
+        maxBarThickness: 54,
+        categoryPercentage: 0.76,
+        barPercentage: 1,
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: { padding: { top: 24 } },
+    animation: { duration: 600, easing: "easeOutQuart" },
+    plugins: {
+      legend: { display: false },
+      resolvedUnresolvedLabels: { resolved: resolvedCount, unresolved: unresolvedCount },
+      tooltip: {
+        backgroundColor: "#0f172a",
+        padding: 10,
+        cornerRadius: 8,
+        titleFont: { size: 12, weight: 600 },
+        bodyFont: { size: 12 },
+        displayColors: true,
+        boxPadding: 4,
+        callbacks: {
+          label: (ctx) => `${ctx.parsed.y} grievance${ctx.parsed.y === 1 ? "" : "s"} (${pctOf(ctx.parsed.y)}%)`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        border: { display: false },
+        ticks: { color: "#475569", font: { size: 12, weight: 600 }, padding: 10 },
+      },
+      y: {
+        beginAtZero: true,
+        border: { display: false },
+        grid: { color: "rgba(148, 163, 184, 0.22)", drawTicks: false },
+        ticks: { color: "#94a3b8", font: { size: 11 }, padding: 8, precision: 0, stepSize: 1 },
+      },
+    },
+  };
+
+  return (
+    <article className="admin-chart-card status-chart-card">
+      <div className="admin-chart-heading">
+        <div>
+          <h2>Resolved vs Unresolved</h2>
+        </div>
+        <div className="trend-header-right">
+          <div className="trend-legend">
+            <span className="legend-item resolved"><i /> Resolved</span>
+            <span className="legend-item total"><i /> Unresolved</span>
+          </div>
+          <select className="chart-select-dropdown" value={range} onChange={(e) => setRange(e.target.value)} aria-label="Select comparison time range">
+            <option value="7d">7 Days</option>
+            <option value="15d">15 Days</option>
+            <option value="1m">1 Month</option>
+            <option value="6m">6 Months</option>
+            <option value="1y">1 Year</option>
+          </select>
+        </div>
+      </div>
+      {total === 0 ? (
+        <p className="empty-note" style={{ padding: "2.5rem 0", textAlign: "center" }}>No grievance data available for this period</p>
+      ) : (
+        <div className="resolved-unresolved-body" role="img" aria-label={`Resolved vs Unresolved chart: ${resolvedCount} resolved (${pctOf(resolvedCount)}%), ${unresolvedCount} unresolved (${pctOf(unresolvedCount)}%)`}>
+          <Bar key={range} data={chartData} options={options} />
+        </div>
+      )}
+    </article>
+  );
+};
+
+export { CategoryBreakdownGraph, TrendLineGraph, ResolvedUnresolvedGraph };

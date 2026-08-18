@@ -32,6 +32,11 @@ class Grievance(models.Model):
         REJECTED = 'REJECTED', 'Rejected'
         CLOSED = 'CLOSED', 'Closed'
 
+    class SpamReviewStatus(models.TextChoices):
+        REVIEW = 'REVIEW', 'Needs Review'
+        SPAM = 'SPAM', 'Confirmed Spam'
+        NOT_SPAM = 'NOT_SPAM', 'Not Spam'
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -85,6 +90,31 @@ class Grievance(models.Model):
         blank=True,
         related_name='escalated_grievances',
         help_text="The officer this grievance was escalated to.",
+    )
+    spam_status = models.CharField(
+        max_length=20,
+        choices=SpamReviewStatus.choices,
+        null=True,
+        blank=True,
+        default=None,
+        help_text=(
+            "Department-side spam classification (null = never flagged by AI). "
+            "REVIEW = AI flagged, awaiting department decision; SPAM = confirmed "
+            "spam (kept out of the normal workflow); NOT_SPAM = accepted as genuine."
+        ),
+    )
+    spam_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='spam_reviews',
+        help_text="Department officer who made the final spam decision.",
+    )
+    spam_reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the department officer made the final spam decision.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

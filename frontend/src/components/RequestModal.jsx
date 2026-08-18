@@ -37,20 +37,9 @@ const RequestModal = ({ grievance, requestType, onClose, onSuccess }) => {
         await api.post(`grievances/${grievance.id}/reopen/`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
-      } else {
-        formData.append('request_type', requestType);
-        formData.append('reason', reason.trim());
-        if (files.length > 0) {
-          formData.append('attachment', files[0]);
-        }
-        await api.post(`grievances/${grievance.id}/request/`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
       }
 
-      const successMsg = requestType === 'REOPEN'
-        ? 'Your grievance has been reopened and forwarded to the assigned department.'
-        : `Your ${meta.title} has been submitted and is pending Campus Admin review.`;
+      const successMsg = 'Your grievance has been reopened and forwarded to the assigned department.';
       onSuccess(successMsg);
       onClose();
     } catch (err) {
@@ -107,7 +96,7 @@ const RequestModal = ({ grievance, requestType, onClose, onSuccess }) => {
             Cancel
           </button>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Submitting...' : requestType === 'REOPEN' ? 'Reopen & Send to Department' : 'Submit to Campus Admin'}
+            {submitting ? 'Submitting...' : 'Reopen & Send to Department'}
           </button>
         </div>
       </form>

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import api from "../services/api";
 import StatusBadge from "../components/StatusBadge";
 import SearchFilter from "../components/SearchFilter";
-import { CategoryBreakdownGraph, TrendLineGraph } from "../components/DashboardCharts";
+import { CategoryBreakdownGraph, ResolvedUnresolvedGraph, TrendLineGraph } from "../components/DashboardCharts";
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(date)) : "—";
 
@@ -87,9 +87,9 @@ const DeptPerformanceGraph = ({ data = [] }) => {
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("REQUESTS");
   const [metrics, setMetrics] = useState({
-    total: 0, pending_requests: 0, pending_requests_breakdown: { ESCALATION: 0 }, spam_review: 0, closed_resolved: 0,
+    total: 0, pending_requests: 0, pending_requests_breakdown: { ESCALATION: 0 }, spam_count: 0, spam_rate: 0, closed_resolved: 0,
   });
-  const [analyticsData, setAnalyticsData] = useState({ department_performance: [], category_breakdown: [], trends: {} });
+  const [analyticsData, setAnalyticsData] = useState({ department_performance: [], category_breakdown: [], trends: {}, resolved_unresolved: {} });
   const [grievances, setGrievances] = useState([]);
   const [requestsList, setRequestsList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -115,6 +115,7 @@ const AdminDashboard = () => {
           department_performance: dashRes.data.counts.department_performance || [],
           category_breakdown: dashRes.data.counts.category_breakdown || [],
           trends: dashRes.data.counts.trends || {},
+          resolved_unresolved: dashRes.data.counts.resolved_unresolved || {},
         });
       }
       if (activeTab === "REQUESTS") {
@@ -203,6 +204,9 @@ const AdminDashboard = () => {
             <h1>Campus Administration</h1>
             <p>Monitor campus-wide grievances and focus on what needs attention.</p>
           </div>
+          <span className="spam-stats-chip" title="Grievances confirmed as spam and removed from escalation tracking">
+            Spam: {metrics.spam_count || 0} ({metrics.spam_rate || 0}%)
+          </span>
         </header>
 
         {toast && <div className="workflow-toast success" role="status">{toast}<button aria-label="Dismiss message" onClick={() => setToast("")}>×</button></div>}
@@ -222,7 +226,8 @@ const AdminDashboard = () => {
             <DeptPerformanceGraph data={analyticsData.department_performance} />
             <CategoryBreakdownGraph data={analyticsData.category_breakdown} />
           </div>
-          <div className="admin-charts-bottom-row">
+          <div className="admin-charts-bottom-row analytics-split">
+            <ResolvedUnresolvedGraph data={analyticsData.resolved_unresolved} />
             <TrendLineGraph trends={analyticsData.trends} title="Campus Grievance Trend" />
           </div>
         </section>

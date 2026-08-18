@@ -51,6 +51,11 @@ urlpatterns = [
         name='close_grievance',
     ),
     path(
+        'grievances/<int:pk>/spam-review/',
+        views.review_spam_grievance,
+        name='spam_review',
+    ),
+    path(
         'grievances/<int:pk>/hod-escalate/',
         views.hod_escalate_grievance,
         name='hod_escalate_grievance',

@@ -108,7 +108,24 @@ class AIAnalysisSerializer(serializers.ModelSerializer):
         ]
 
 
-class GrievanceListSerializer(serializers.ModelSerializer):
+class SpamDecisionMixin:
+    """Hides spam-handling fields unless the requester is a HOD/STAFF of the
+    grievance's department. Spam handling is department-side only: students,
+    Campus Admin, and anonymous trackers never see it."""
+
+    def _can_see_spam(self, obj):
+        req = self.context.get('request')
+        if req is None or getattr(req, 'user', None) is None or req.user.is_anonymous:
+            return False
+        user = req.user
+        if user.role not in ('HOD', 'STAFF'):
+            return False
+        if obj.department and user.department and obj.department != user.department:
+            return False
+        return True
+
+
+class GrievanceListSerializer(SpamDecisionMixin, serializers.ModelSerializer):
     """Compact serializer used in list views (no nested response/history trees)."""
 
     category_name = serializers.CharField(source='category.name', read_only=True)
@@ -119,6 +136,9 @@ class GrievanceListSerializer(serializers.ModelSerializer):
     escalated_to_name = serializers.CharField(
         source='escalated_to.get_full_name', read_only=True, allow_null=True
     )
+    spam_status = serializers.SerializerMethodField()
+    spam_confidence = serializers.SerializerMethodField()
+    spam_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = Grievance
@@ -128,9 +148,29 @@ class GrievanceListSerializer(serializers.ModelSerializer):
             'is_reopened',
             'escalation_level', 'escalated_to_name',
             'submitter_name', 'attachment_count', 'days_since_update',
+            'spam_status', 'spam_confidence', 'spam_reason',
             'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    def get_spam_status(self, obj):
+        return obj.spam_status if self._can_see_spam(obj) else None
+
+    def get_spam_confidence(self, obj):
+        if not self._can_see_spam(obj) or obj.spam_status is None:
+            return None
+        analysis = getattr(obj, 'ai_analysis', None)
+        if analysis is None or not analysis.spam_prediction:
+            return None
+        return round(analysis.confidence_score * 100)
+
+    def get_spam_reason(self, obj):
+        if not self._can_see_spam(obj) or obj.spam_status is None:
+            return None
+        analysis = getattr(obj, 'ai_analysis', None)
+        if analysis is None or not analysis.spam_prediction:
+            return None
+        return analysis.classification_reason or None
 
     def get_submitter_name(self, obj):
         """Return the submitter's full name unless the grievance is anonymous."""
@@ -339,7 +379,7 @@ class StatusCommentSerializer(serializers.ModelSerializer):
         return obj.user.get_full_name() or obj.user.username
 
 
-class GrievanceDetailSerializer(serializers.ModelSerializer):
+class GrievanceDetailSerializer(SpamDecisionMixin, serializers.ModelSerializer):
     """
     Full-detail serializer for a single grievance.
 
@@ -360,6 +400,12 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
     reopen_attachments = ReopenAttachmentSerializer(many=True, read_only=True)
     requests = RequestSerializer(many=True, read_only=True)
     status_comments = StatusCommentSerializer(many=True, read_only=True)
+    spam_status = serializers.SerializerMethodField()
+    spam_confidence = serializers.SerializerMethodField()
+    spam_reason = serializers.SerializerMethodField()
+    spam_reviewed_by_name = serializers.SerializerMethodField()
+    spam_reviewed_at = serializers.SerializerMethodField()
+    spam_rejected = serializers.SerializerMethodField()
 
     class Meta:
         model = Grievance
@@ -370,6 +416,8 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
             'escalated_to_name', 'submitter', 'submitter_name',
             'responses', 'status_history', 'ai_analysis', 'attachments',
             'reopen_attachments', 'requests', 'status_comments',
+            'spam_status', 'spam_confidence', 'spam_reason',
+            'spam_reviewed_by_name', 'spam_reviewed_at', 'spam_rejected',
             'created_at', 'updated_at',
         ]
         read_only_fields = fields
@@ -378,6 +426,42 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
         if obj.is_anonymous:
             return None
         return obj.user.get_full_name() or obj.user.username
+
+    def get_spam_status(self, obj):
+        return obj.spam_status if self._can_see_spam(obj) else None
+
+    def get_spam_confidence(self, obj):
+        if not self._can_see_spam(obj) or obj.spam_status is None:
+            return None
+        analysis = getattr(obj, 'ai_analysis', None)
+        if analysis is None or not analysis.spam_prediction:
+            return None
+        return round(analysis.confidence_score * 100)
+
+    def get_spam_reason(self, obj):
+        if not self._can_see_spam(obj) or obj.spam_status is None:
+            return None
+        analysis = getattr(obj, 'ai_analysis', None)
+        if analysis is None or not analysis.spam_prediction:
+            return None
+        return analysis.classification_reason or None
+
+    def get_spam_reviewed_by_name(self, obj):
+        if not self._can_see_spam(obj) or obj.spam_reviewed_by is None:
+            return None
+        if obj.spam_reviewed_by.role == 'HOD':
+            return 'HOD'
+        return 'Staff'
+
+    def get_spam_reviewed_at(self, obj):
+        if not self._can_see_spam(obj):
+            return None
+        return obj.spam_reviewed_at
+
+    def get_spam_rejected(self, obj):
+        """Public flag (visible to everyone with detail access) so the student
+        knows their submission was rejected as spam — no other spam details."""
+        return obj.spam_status == Grievance.SpamReviewStatus.SPAM
 
 
 class GrievanceTrackSerializer(serializers.Serializer):

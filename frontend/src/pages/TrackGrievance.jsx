@@ -4,11 +4,6 @@ import StatusBadge from '../components/StatusBadge';
 
 const formatDate = (date) => date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(date)) : '—';
 const statusLabel = (status) => status ? status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Initial submission';
-const responderLabel = (response) => {
-  if (response.responder_role === 'Head of Department') return 'HOD';
-  if (response.responder_role === 'Campus Admin') return 'Campus Admin';
-  return response.responder_name || 'Department Representative';
-};
 const errorMessage = (error) => error.response?.data?.error || error.response?.data?.detail || 'We could not find a grievance with those details. Check the ID and secret code and try again.';
 
 const TrackGrievance = () => {
@@ -60,20 +55,6 @@ const TrackGrievance = () => {
         </header>
 
         <section className="detail-section">
-          <h2 className="section-title"><span className="section-title-accent" />Official Responses</h2>
-          {grievance.responses?.length ? (
-            <div className="response-list">
-              {[...grievance.responses].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((response) => (
-                <article key={response.id} className="response-card">
-                  <header><strong>{responderLabel(response)}</strong><time>{formatDate(response.created_at)}</time></header>
-                  <p>{response.content}</p>
-                </article>
-              ))}
-            </div>
-          ) : <p className="empty-note">No official response has been posted yet.</p>}
-        </section>
-
-        <section className="detail-section">
           <h2 className="section-title"><span className="section-title-accent" />Status History & Audit Trail</h2>
           {grievance.status_history?.length ? (
             <div className="audit-timeline">
@@ -81,7 +62,6 @@ const TrackGrievance = () => {
                 <div key={entry.id || index} className="timeline-item">
                   <div className="timeline-marker-col">
                     <span className="timeline-marker-dot" />
-                    {index < grievance.status_history.length - 1 && <span className="timeline-line" />}
                   </div>
                   <div className="timeline-card">
                     <div className="timeline-card-header">

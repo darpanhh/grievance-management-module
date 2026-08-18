@@ -99,6 +99,15 @@ def find_stale_grievances() -> list[Grievance]:
             current_status__in=eligible_statuses,
             updated_at__lt=cutoff,
         )
+        # Spam-handled grievances (awaiting review or confirmed spam) never
+        # run an escalation timer — they stay out of the normal workflow
+        # until the department officer decides on the AI flag.
+        .exclude(
+            spam_status__in=[
+                Grievance.SpamReviewStatus.REVIEW,
+                Grievance.SpamReviewStatus.SPAM,
+            ]
+        )
         .exclude(Exists(rejected_recently))
         .select_related('department', 'user')
         .iterator()
@@ -436,23 +445,27 @@ def send_request_notification_email(
     reason: str = '',
 ) -> None:
     """
-    Notify all active Campus Admins when a submitter files a request
-    (rejection appeal, spam appeal, or reopen) that needs admin review.
+    Notify the reviewer when a submitter files a request that needs review.
+    Escalation and reopen requests are reviewed by Campus Admin.
     """
-    admins = User.objects.filter(
-        role=User.Role.CAMPUS_ADMIN,
-        is_active=True,
-    )
-    recipients = [admin.email for admin in admins if admin.email]
+    recipients = [
+        admin.email
+        for admin in User.objects.filter(
+            role=User.Role.CAMPUS_ADMIN,
+            is_active=True,
+        )
+        if admin.email
+    ]
+    recipient_label = 'Campus Admin'
     if not recipients:
         logger.info(
-            'GMS-%04d: no Campus Admin email found for request notification',
+            'GMS-%04d: no %s email found for request notification',
             grievance.id,
+            recipient_label,
         )
         return
 
     type_labels = {
-        Request.RequestType.REJECTION_APPEAL: 'Rejection Appeal',
         Request.RequestType.SPAM_APPEAL: 'Spam Appeal',
         Request.RequestType.REOPEN: 'Reopen Request',
         Request.RequestType.ESCALATION: 'Escalation',
@@ -475,7 +488,7 @@ def send_request_notification_email(
         f"[GMS] {type_label} — GMS-{grievance.id:04d}: {grievance.title}"
     )
     text_message = (
-        f"Dear Campus Admin,\n\n"
+        f"Dear {recipient_label},\n\n"
         f"A student has submitted a {type_label} that requires your review.\n\n"
         f"Grievance: GMS-{grievance.id:04d}\n"
         f"Title: {grievance.title}\n"
@@ -508,8 +521,8 @@ def send_request_notification_email(
         html_message=html_message,
     )
     logger.info(
-        'Request notification email queued for Campus Admins %s for GMS-%04d',
-        recipients, grievance.id,
+        'Request notification email queued for %s %s for GMS-%04d',
+        recipient_label, recipients, grievance.id,
     )
 
 
