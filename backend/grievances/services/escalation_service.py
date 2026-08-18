@@ -4,7 +4,7 @@ APScheduler-based escalation service for overdue grievances.
 Runs on a periodic schedule (default: every 60 minutes) and:
 
   1. Finds grievances in SUBMITTED / UNDER_REVIEW / REOPENED that haven't
-     been updated within ESCALATION_HOURS (default: 72h)
+     been updated within ESCALATION_HOURS (default: 168h / 7 days)
   2. Sets escalation_level = 1, status = ESCALATED
   3. Assigns an active Campus Admin
   4. Sends an HTML email notification to the assigned officer
@@ -19,6 +19,7 @@ Statuses intentionally excluded from auto-escalation:
 from __future__ import annotations
 
 import logging
+import threading
 
 from django.conf import settings
 from django.core.mail import send_mail
@@ -39,7 +40,16 @@ logger = logging.getLogger(__name__)
 
 def get_escalation_hours() -> int:
     """Return the inactivity threshold (hours) from settings."""
-    return getattr(settings, 'ESCALATION_HOURS', 72)
+    return getattr(settings, 'ESCALATION_HOURS', 168)
+
+
+def format_inactivity_window() -> str:
+    """Human-readable inactivity window (e.g. '7 days' or '36 hours')."""
+    hours = get_escalation_hours()
+    if hours % 24 == 0:
+        days = int(hours // 24)
+        return f"{days} day{'s' if days != 1 else ''}"
+    return f"{hours:g} hour{'s' if hours != 1 else ''}"
 
 
 def find_next_officer(grievance: Grievance) -> User | None:  # noqa: ARG001
@@ -98,6 +108,15 @@ def find_stale_grievances() -> list[Grievance]:
             current_status__in=eligible_statuses,
             updated_at__lt=cutoff,
         )
+        # Spam-handled grievances (awaiting review or confirmed spam) never
+        # run an escalation timer — they stay out of the normal workflow
+        # until the department officer decides on the AI flag.
+        .exclude(
+            spam_status__in=[
+                Grievance.SpamReviewStatus.REVIEW,
+                Grievance.SpamReviewStatus.SPAM,
+            ]
+        )
         .exclude(Exists(rejected_recently))
         .select_related('department', 'user')
         .iterator()
@@ -129,7 +148,7 @@ def escalate(grievance: Grievance) -> bool:
     grievance.current_status = Grievance.Status.ESCALATED
     grievance._action_by = None  # system action
     grievance._action_remarks = (
-        f"Auto-escalated after {get_escalation_hours()} hours of inactivity. "
+        f"Auto-escalated after {format_inactivity_window()} of inactivity. "
         f"Assigned to {admin_name}."
     )
     grievance.save(update_fields=[
@@ -144,7 +163,7 @@ def escalate(grievance: Grievance) -> bool:
         grievance=grievance,
         student=None,
         request_type=Request.RequestType.ESCALATION,
-        reason=f"System auto-escalated after {get_escalation_hours()} hours of inactivity without resolution.",
+        reason=f"System auto-escalated after {format_inactivity_window()} of inactivity without resolution.",
         status=Request.RequestStatus.PENDING,
         original_status=previous_status,
     )
@@ -193,6 +212,36 @@ def run_escalation_cycle() -> dict:
 # ---------------------------------------------------------------------------
 
 
+def send_email_async(subject: str, message: str, recipient_list: list[str],
+                     html_message: str | None = None,
+                     from_email: str | None = None) -> None:
+    """
+    Send an email on a background thread so the HTTP request never blocks
+    on SMTP.  Failures are logged, never raised — the caller's response
+    does not depend on email delivery.
+    """
+    from_email = from_email or settings.DEFAULT_FROM_EMAIL
+
+    def _send() -> None:
+        try:
+            send_mail(
+                subject,
+                message,
+                from_email,
+                recipient_list,
+                html_message=html_message,
+                fail_silently=False,
+            )
+        except Exception as exc:
+            logger.error('Background email to %s failed: %s', recipient_list, exc)
+
+    threading.Thread(
+        target=_send,
+        name='gms-email',
+        daemon=True,
+    ).start()
+
+
 def send_submission_email(grievance: Grievance) -> None:
     """
     Notify the HOD of the grievance's department when a new grievance is
@@ -239,14 +288,14 @@ def send_submission_email(grievance: Grievance) -> None:
         },
     )
 
-    try:
-        send_mail(subject, text_message, settings.DEFAULT_FROM_EMAIL,
-                  [hod.email], html_message=html_message, fail_silently=False)
-        logger.info('Submission email sent to HOD %s (%s) for GMS-%04d',
-                    hod.get_full_name(), hod.email, grievance.id)
-    except Exception as exc:
-        logger.error('Failed to send submission email for GMS-%04d: %s',
-                     grievance.id, exc)
+    send_email_async(
+        subject,
+        text_message,
+        [hod.email],
+        html_message=html_message,
+    )
+    logger.info('Submission email queued for HOD %s (%s) for GMS-%04d',
+                hod.get_full_name(), hod.email, grievance.id)
 
 
 def send_response_email(grievance: Grievance) -> None:
@@ -282,14 +331,14 @@ def send_response_email(grievance: Grievance) -> None:
          'site_name': 'Grievance Management System'},
     )
 
-    try:
-        send_mail(subject, text_message, settings.DEFAULT_FROM_EMAIL,
-                  [user.email], html_message=html_message, fail_silently=False)
-        logger.info('Response email sent to %s (%s) for GMS-%04d',
-                    user.get_full_name(), user.email, grievance.id)
-    except Exception as exc:
-        logger.error('Failed to send response email for GMS-%04d: %s',
-                     grievance.id, exc)
+    send_email_async(
+        subject,
+        text_message,
+        [user.email],
+        html_message=html_message,
+    )
+    logger.info('Response email queued for %s (%s) for GMS-%04d',
+                user.get_full_name(), user.email, grievance.id)
 
 
 def send_resolution_email(grievance: Grievance) -> None:
@@ -321,14 +370,14 @@ def send_resolution_email(grievance: Grievance) -> None:
          'site_name': 'Grievance Management System'},
     )
 
-    try:
-        send_mail(subject, text_message, settings.DEFAULT_FROM_EMAIL,
-                  [user.email], html_message=html_message, fail_silently=False)
-        logger.info('Resolution email sent to %s (%s) for GMS-%04d',
-                    user.get_full_name(), user.email, grievance.id)
-    except Exception as exc:
-        logger.error('Failed to send resolution email for GMS-%04d: %s',
-                     grievance.id, exc)
+    send_email_async(
+        subject,
+        text_message,
+        [user.email],
+        html_message=html_message,
+    )
+    logger.info('Resolution email queued for %s (%s) for GMS-%04d',
+                user.get_full_name(), user.email, grievance.id)
 
 
 # ---------------------------------------------------------------------------
@@ -387,24 +436,16 @@ def send_escalation_email(grievance: Grievance, officer: User) -> None:
         context,
     )
 
-    try:
-        send_mail(
-            subject=subject,
-            message=text_message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[officer.email],
-            html_message=html_message,
-            fail_silently=False,
-        )
-        logger.info(
-            'Email sent to %s (%s) for GMS-%04d',
-            officer.email, officer.get_full_name(), grievance.id,
-        )
-    except Exception as exc:
-        logger.error(
-            'Failed to send escalation email for GMS-%04d to %s: %s',
-            grievance.id, officer.email, exc,
-        )
+    send_email_async(
+        subject,
+        text_message,
+        [officer.email],
+        html_message=html_message,
+    )
+    logger.info(
+        'Escalation email queued for %s (%s) for GMS-%04d',
+        officer.email, officer.get_full_name(), grievance.id,
+    )
 
 
 def send_request_notification_email(
@@ -413,23 +454,27 @@ def send_request_notification_email(
     reason: str = '',
 ) -> None:
     """
-    Notify all active Campus Admins when a submitter files a request
-    (rejection appeal, spam appeal, or reopen) that needs admin review.
+    Notify the reviewer when a submitter files a request that needs review.
+    Escalation and reopen requests are reviewed by Campus Admin.
     """
-    admins = User.objects.filter(
-        role=User.Role.CAMPUS_ADMIN,
-        is_active=True,
-    )
-    recipients = [admin.email for admin in admins if admin.email]
+    recipients = [
+        admin.email
+        for admin in User.objects.filter(
+            role=User.Role.CAMPUS_ADMIN,
+            is_active=True,
+        )
+        if admin.email
+    ]
+    recipient_label = 'Campus Admin'
     if not recipients:
         logger.info(
-            'GMS-%04d: no Campus Admin email found for request notification',
+            'GMS-%04d: no %s email found for request notification',
             grievance.id,
+            recipient_label,
         )
         return
 
     type_labels = {
-        Request.RequestType.REJECTION_APPEAL: 'Rejection Appeal',
         Request.RequestType.SPAM_APPEAL: 'Spam Appeal',
         Request.RequestType.REOPEN: 'Reopen Request',
         Request.RequestType.ESCALATION: 'Escalation',
@@ -452,7 +497,7 @@ def send_request_notification_email(
         f"[GMS] {type_label} — GMS-{grievance.id:04d}: {grievance.title}"
     )
     text_message = (
-        f"Dear Campus Admin,\n\n"
+        f"Dear {recipient_label},\n\n"
         f"A student has submitted a {type_label} that requires your review.\n\n"
         f"Grievance: GMS-{grievance.id:04d}\n"
         f"Title: {grievance.title}\n"
@@ -478,21 +523,86 @@ def send_request_notification_email(
         },
     )
 
-    try:
-        send_mail(
-            subject=subject,
-            message=text_message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=recipients,
-            html_message=html_message,
-            fail_silently=False,
-        )
+    send_email_async(
+        subject,
+        text_message,
+        recipients,
+        html_message=html_message,
+    )
+    logger.info(
+        'Request notification email queued for %s %s for GMS-%04d',
+        recipient_label, recipients, grievance.id,
+    )
+
+
+def send_comment_notification_email(
+    grievance: Grievance,
+    comment_content: str,
+) -> None:
+    """
+    Notify the department HOD when the submitter posts a status-reminder
+    comment on a grievance stuck in UNDER_REVIEW or IN_PROGRESS.
+    """
+    recipients: list[str] = []
+    if grievance.department is not None:
+        hod = User.objects.filter(
+            role=User.Role.HOD,
+            department=grievance.department,
+            is_active=True,
+        ).first()
+        if hod and hod.email:
+            recipients = [hod.email]
+    if not recipients:
         logger.info(
-            'Request notification email sent to Campus Admins %s for GMS-%04d',
-            recipients, grievance.id,
+            'GMS-%04d: no HOD email found for comment notification',
+            grievance.id,
         )
-    except Exception as exc:
-        logger.error(
-            'Failed to send request notification email for GMS-%04d: %s',
-            grievance.id, exc,
-        )
+        return
+
+    submitter = (
+        grievance.user.get_full_name() or grievance.user.username
+        if not grievance.is_anonymous else 'Anonymous'
+    )
+    grievance_url = (
+        f"{settings.BASE_URL or 'http://localhost:8000'}"
+        f"/api/grievances/{grievance.pk}/"
+    )
+
+    subject = (
+        f"[GMS] Reminder Comment — GMS-{grievance.id:04d}: {grievance.title}"
+    )
+    text_message = (
+        f"Dear HOD,\n\n"
+        f"The submitter has posted a reminder comment asking for a status "
+        f"update on a grievance in your department.\n\n"
+        f"Grievance: GMS-{grievance.id:04d}\n"
+        f"Title: {grievance.title}\n"
+        f"Current Status: {grievance.get_current_status_display()}\n"
+        f"Submitted by: {submitter}\n"
+        f"Comment: {comment_content}\n\n"
+        f"Please log in to the Grievance Management System to respond.\n"
+        f"View: {grievance_url}\n\n"
+        f"Regards,\nGrievance Management System"
+    )
+
+    html_message = render_to_string(
+        'emails/comment_notification.html',
+        {
+            'grievance': grievance,
+            'submitter': submitter,
+            'comment_content': comment_content,
+            'grievance_url': grievance_url,
+            'site_name': 'Grievance Management System',
+        },
+    )
+
+    send_email_async(
+        subject,
+        text_message,
+        recipients,
+        html_message=html_message,
+    )
+    logger.info(
+        'Comment notification email queued for HOD %s for GMS-%04d',
+        recipients, grievance.id,
+    )

@@ -75,9 +75,13 @@ const Register = () => {
   }, []);
 
   const handleChange = (e) => {
+    const { name, value } = e.target;
+    const nextValue = name === 'contact_number'
+      ? value.replace(/\D/g, '').slice(0, 10)
+      : value;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [name]: nextValue,
     });
     if (errorMessage) setErrorMessage('');
   };
@@ -98,6 +102,11 @@ const Register = () => {
 
     if (!formData.department) {
       setErrorMessage('Please select a department.');
+      return;
+    }
+
+    if (formData.contact_number.trim().length !== 10) {
+      setErrorMessage('Contact number must be exactly 10 digits.');
       return;
     }
 
@@ -129,7 +138,7 @@ const Register = () => {
     return (
       <div className="loading-spinner-container">
         <div className="spinner"></div>
-        <p>Checking session...</p>
+        <p>{isSubmitting ? 'Creating your account...' : 'Checking session...'}</p>
       </div>
     );
   }
@@ -260,6 +269,10 @@ const Register = () => {
               id="contact_number"
               name="contact_number"
               placeholder="98XXXXXXXX"
+              maxLength="10"
+              inputMode="numeric"
+              pattern="[0-9]{10}"
+              title="Contact number must be exactly 10 digits"
               value={formData.contact_number}
               onChange={handleChange}
               required

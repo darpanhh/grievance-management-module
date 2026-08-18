@@ -7,8 +7,10 @@ from .models import (
     Category,
     Department,
     Grievance,
+    ReopenAttachment,
     Request,
     Response,
+    StatusComment,
     StatusHistory,
 )
 
@@ -40,6 +42,15 @@ class AttachmentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'file_name', 'file_type', 'uploaded_at']
 
 
+class ReopenAttachmentSerializer(serializers.ModelSerializer):
+    """Serializer for ReopenAttachment model — documents uploaded with reopen requests."""
+
+    class Meta:
+        model = ReopenAttachment
+        fields = ['id', 'file_name', 'file_type', 'file', 'uploaded_at']
+        read_only_fields = ['id', 'file_name', 'file_type', 'uploaded_at']
+
+
 class StatusHistorySerializer(serializers.ModelSerializer):
     """Read-only serializer for StatusHistory entries."""
 
@@ -48,11 +59,17 @@ class StatusHistorySerializer(serializers.ModelSerializer):
     def get_action_by_name(self, obj):
         if obj.action_by is None:
             return None
+        # Never expose HOD / Campus Admin personal names — show the role only
+        if obj.action_by.role == 'HOD':
+            return 'HOD'
+        if obj.action_by.role == 'CAMPUS_ADMIN':
+            return 'Campus Admin'
+        # Hide student/staff name for anonymous grievances
+        if obj.grievance.is_anonymous and obj.action_by.role in ('STUDENT', 'STAFF'):
+            return 'Anonymous'
         full_name = obj.action_by.get_full_name()
         if full_name:
             return full_name
-        if obj.action_by.role == 'CAMPUS_ADMIN':
-            return 'Campus Administrator'
         return obj.action_by.username
 
     class Meta:
@@ -65,16 +82,19 @@ class StatusHistorySerializer(serializers.ModelSerializer):
 
 
 class ResponseSerializer(serializers.ModelSerializer):
-    """Serializer for official HOD responses on a grievance."""
+    """Serializer for official HOD/Campus Admin responses on a grievance."""
 
     responder_name = serializers.CharField(
         source='responder.get_full_name', read_only=True
     )
+    responder_role = serializers.CharField(
+        source='responder.get_role_display', read_only=True
+    )
 
     class Meta:
         model = Response
-        fields = ['id', 'responder', 'responder_name', 'content', 'created_at']
-        read_only_fields = ['id', 'responder', 'responder_name', 'created_at']
+        fields = ['id', 'responder', 'responder_name', 'responder_role', 'content', 'created_at']
+        read_only_fields = ['id', 'responder', 'responder_name', 'responder_role', 'created_at']
 
 
 class AIAnalysisSerializer(serializers.ModelSerializer):
@@ -88,7 +108,24 @@ class AIAnalysisSerializer(serializers.ModelSerializer):
         ]
 
 
-class GrievanceListSerializer(serializers.ModelSerializer):
+class SpamDecisionMixin:
+    """Hides spam-handling fields unless the requester is a HOD/STAFF of the
+    grievance's department. Spam handling is department-side only: students,
+    Campus Admin, and anonymous trackers never see it."""
+
+    def _can_see_spam(self, obj):
+        req = self.context.get('request')
+        if req is None or getattr(req, 'user', None) is None or req.user.is_anonymous:
+            return False
+        user = req.user
+        if user.role not in ('HOD', 'STAFF'):
+            return False
+        if obj.department and user.department and obj.department != user.department:
+            return False
+        return True
+
+
+class GrievanceListSerializer(SpamDecisionMixin, serializers.ModelSerializer):
     """Compact serializer used in list views (no nested response/history trees)."""
 
     category_name = serializers.CharField(source='category.name', read_only=True)
@@ -99,17 +136,56 @@ class GrievanceListSerializer(serializers.ModelSerializer):
     escalated_to_name = serializers.CharField(
         source='escalated_to.get_full_name', read_only=True, allow_null=True
     )
+    spam_status = serializers.SerializerMethodField()
+    spam_confidence = serializers.SerializerMethodField()
+    spam_reason = serializers.SerializerMethodField()
+    display_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Grievance
         fields = [
-            'id', 'title', 'current_status', 'category', 'category_name',
-            'department', 'department_name', 'is_anonymous', 'is_reopened',
+            'id', 'title', 'current_status', 'display_status', 'category', 'category_name',
+            'department', 'department_name', 'is_anonymous', 'is_sensitive',
+            'is_reopened',
             'escalation_level', 'escalated_to_name',
             'submitter_name', 'attachment_count', 'days_since_update',
+            'spam_status', 'spam_confidence', 'spam_reason',
             'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    def get_display_status(self, obj):
+        """Students must not see the internal ESCALATED status — mirror the
+        last visible status from the status history instead, exactly like
+        the grievance detail page."""
+        request = self.context.get('request')
+        if request and getattr(request.user, 'role', None) in ('HOD', 'CAMPUS_ADMIN', 'DEPARTMENT_ADMIN'):
+            return obj.current_status
+        if obj.current_status != Grievance.Status.ESCALATED:
+            return obj.current_status
+        last = StatusHistory.objects.filter(grievance=obj).exclude(
+            new_status=Grievance.Status.ESCALATED,
+        ).order_by('-created_at').first()
+        return last.new_status if last else obj.current_status
+
+    def get_spam_status(self, obj):
+        return obj.spam_status if self._can_see_spam(obj) else None
+
+    def get_spam_confidence(self, obj):
+        if not self._can_see_spam(obj) or obj.spam_status is None:
+            return None
+        analysis = getattr(obj, 'ai_analysis', None)
+        if analysis is None or not analysis.spam_prediction:
+            return None
+        return round(analysis.confidence_score * 100)
+
+    def get_spam_reason(self, obj):
+        if not self._can_see_spam(obj) or obj.spam_status is None:
+            return None
+        analysis = getattr(obj, 'ai_analysis', None)
+        if analysis is None or not analysis.spam_prediction:
+            return None
+        return analysis.classification_reason or None
 
     def get_submitter_name(self, obj):
         """Return the submitter's full name unless the grievance is anonymous."""
@@ -119,7 +195,10 @@ class GrievanceListSerializer(serializers.ModelSerializer):
 
     def get_attachment_count(self, obj):
         """Return the number of attachments (avoids prefetch overhead in listings)."""
-        return getattr(obj, '_attachment_count', None) or obj.attachments.count()
+        annotated = getattr(obj, '_attachment_count', None)
+        if annotated is not None:
+            return annotated
+        return obj.attachments.count()
 
     def get_days_since_update(self, obj):
         """Return the number of days since the last update."""
@@ -147,7 +226,7 @@ class GrievanceCreateSerializer(serializers.ModelSerializer):
         model = Grievance
         fields = [
             'title', 'description', 'category', 'department',
-            'is_anonymous', 'uploaded_files',
+            'is_anonymous', 'is_sensitive', 'uploaded_files',
         ]
         extra_kwargs = {
             'department': {'required': False, 'allow_null': True},
@@ -210,6 +289,7 @@ class GrievanceCreateSerializer(serializers.ModelSerializer):
             category=validated_data.get('category'),
             department=validated_data.get('department'),
             is_anonymous=validated_data.get('is_anonymous', False),
+            is_sensitive=validated_data.get('is_sensitive', False),
             current_status=Grievance.Status.SUBMITTED,
         )
 
@@ -250,7 +330,9 @@ class RequestSerializer(serializers.ModelSerializer):
     """
     grievance_title = serializers.CharField(source='grievance.title', read_only=True)
     grievance_created_at = serializers.DateTimeField(source='grievance.created_at', read_only=True, allow_null=True)
+    grievance_current_status = serializers.CharField(source='grievance.current_status', read_only=True)
     student_name = serializers.SerializerMethodField()
+    hod_name = serializers.SerializerMethodField()
     reviewed_by_admin_name = serializers.CharField(source='reviewed_by_admin.get_full_name', read_only=True, allow_null=True)
     forwarded_department_name = serializers.CharField(source='forwarded_department.name', read_only=True, allow_null=True)
     request_type_display = serializers.CharField(source='get_request_type_display', read_only=True)
@@ -261,7 +343,8 @@ class RequestSerializer(serializers.ModelSerializer):
         model = Request
         fields = [
             'id', 'grievance', 'grievance_title', 'grievance_created_at',
-            'student', 'student_name',
+            'grievance_current_status',
+            'student', 'student_name', 'hod_name',
             'request_type', 'request_type_display', 'reason', 'attachment',
             'status', 'status_display', 'original_status', 'original_status_display',
             'created_at', 'reviewed_by_admin',
@@ -282,8 +365,36 @@ class RequestSerializer(serializers.ModelSerializer):
             return obj.grievance.user.get_full_name() or obj.grievance.user.username
         return "System Auto-Escalation"
 
+    def get_hod_name(self, obj):
+        if obj.request_type != 'ESCALATION':
+            return None
+        reason = obj.reason or ''
+        if reason.startswith('HOD '):
+            # Extract name from "HOD <name> escalated: <reason>"
+            parts = reason[4:].split(' escalated:')
+            if parts:
+                return parts[0].strip()
+        return None
 
-class GrievanceDetailSerializer(serializers.ModelSerializer):
+
+class StatusCommentSerializer(serializers.ModelSerializer):
+    """Serializer for the submitter's reminder comment on a stuck grievance."""
+
+    user_name = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = StatusComment
+        fields = ['id', 'grievance', 'user', 'user_name', 'status', 'status_display', 'content', 'created_at']
+        read_only_fields = ['id', 'grievance', 'user', 'user_name', 'status', 'status_display', 'created_at']
+
+    def get_user_name(self, obj):
+        if obj.grievance.is_anonymous:
+            return 'Anonymous'
+        return obj.user.get_full_name() or obj.user.username
+
+
+class GrievanceDetailSerializer(SpamDecisionMixin, serializers.ModelSerializer):
     """
     Full-detail serializer for a single grievance.
 
@@ -301,17 +412,28 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
     status_history = StatusHistorySerializer(many=True, read_only=True)
     ai_analysis = AIAnalysisSerializer(read_only=True, allow_null=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
+    reopen_attachments = ReopenAttachmentSerializer(many=True, read_only=True)
     requests = RequestSerializer(many=True, read_only=True)
+    status_comments = StatusCommentSerializer(many=True, read_only=True)
+    spam_status = serializers.SerializerMethodField()
+    spam_confidence = serializers.SerializerMethodField()
+    spam_reason = serializers.SerializerMethodField()
+    spam_reviewed_by_name = serializers.SerializerMethodField()
+    spam_reviewed_at = serializers.SerializerMethodField()
+    spam_rejected = serializers.SerializerMethodField()
 
     class Meta:
         model = Grievance
         fields = [
             'id', 'title', 'description', 'current_status',
             'category', 'category_name', 'department', 'department_name',
-            'is_anonymous', 'is_reopened', 'escalation_level',
+            'is_anonymous', 'is_sensitive', 'is_reopened', 'escalation_level',
             'escalated_to_name', 'submitter', 'submitter_name',
             'responses', 'status_history', 'ai_analysis', 'attachments',
-            'requests', 'created_at', 'updated_at',
+            'reopen_attachments', 'requests', 'status_comments',
+            'spam_status', 'spam_confidence', 'spam_reason',
+            'spam_reviewed_by_name', 'spam_reviewed_at', 'spam_rejected',
+            'created_at', 'updated_at',
         ]
         read_only_fields = fields
 
@@ -319,6 +441,42 @@ class GrievanceDetailSerializer(serializers.ModelSerializer):
         if obj.is_anonymous:
             return None
         return obj.user.get_full_name() or obj.user.username
+
+    def get_spam_status(self, obj):
+        return obj.spam_status if self._can_see_spam(obj) else None
+
+    def get_spam_confidence(self, obj):
+        if not self._can_see_spam(obj) or obj.spam_status is None:
+            return None
+        analysis = getattr(obj, 'ai_analysis', None)
+        if analysis is None or not analysis.spam_prediction:
+            return None
+        return round(analysis.confidence_score * 100)
+
+    def get_spam_reason(self, obj):
+        if not self._can_see_spam(obj) or obj.spam_status is None:
+            return None
+        analysis = getattr(obj, 'ai_analysis', None)
+        if analysis is None or not analysis.spam_prediction:
+            return None
+        return analysis.classification_reason or None
+
+    def get_spam_reviewed_by_name(self, obj):
+        if not self._can_see_spam(obj) or obj.spam_reviewed_by is None:
+            return None
+        if obj.spam_reviewed_by.role == 'HOD':
+            return 'HOD'
+        return 'Staff'
+
+    def get_spam_reviewed_at(self, obj):
+        if not self._can_see_spam(obj):
+            return None
+        return obj.spam_reviewed_at
+
+    def get_spam_rejected(self, obj):
+        """Public flag (visible to everyone with detail access) so the student
+        knows their submission was rejected as spam — no other spam details."""
+        return obj.spam_status == Grievance.SpamReviewStatus.SPAM
 
 
 class GrievanceTrackSerializer(serializers.Serializer):

@@ -19,10 +19,6 @@ class Command(BaseCommand):
 
             # Administrative
             {"name": "Administrative Department", "type": Department.DepartmentType.ADMINISTRATIVE},
-            {"name": "Library", "type": Department.DepartmentType.ADMINISTRATIVE},
-            {"name": "Security Office", "type": Department.DepartmentType.ADMINISTRATIVE},
-            {"name": "Accounts Office", "type": Department.DepartmentType.ADMINISTRATIVE},
-            {"name": "IT Support", "type": Department.DepartmentType.ADMINISTRATIVE},
         ]
 
         self.stdout.write("Seeding departments...")

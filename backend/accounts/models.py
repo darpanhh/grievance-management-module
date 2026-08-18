@@ -53,9 +53,10 @@ class User(AbstractUser):
         help_text='Null for Campus Admin who has system-wide access.',
     )
     contact_number = models.CharField(
-        max_length=15,
+        max_length=10,
         blank=True,
         default='',
+        help_text='Exactly 10 digits (e.g. 98XXXXXXXX).',
     )
 
     class Meta:

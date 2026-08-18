@@ -15,13 +15,14 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
-from .views import status_check
+from .views import favicon, media_serve, status_check
 
 urlpatterns = [
+    path('favicon.ico', favicon, name='favicon_ico'),
+    path('favicon.svg', favicon, name='favicon_svg'),
     path('admin/', admin.site.urls),
     path('api/status/', status_check, name='status_check'),
     path('api/auth/', include('accounts.urls')),
@@ -30,5 +31,5 @@ urlpatterns = [
 
 # Serve media files during development
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += [path(f'{settings.MEDIA_URL.lstrip("/")}<path:path>', media_serve, name='media_serve')]
 

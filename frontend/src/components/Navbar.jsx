@@ -80,7 +80,7 @@ const Navbar = () => {
               </>
             )}
 
-            {user && (
+            {user && !dashboardOnlyRole && (
               <Link
                 to={dashboardUrl}
                 className={`nav-link ${isActive(dashboardUrl) || isActive('/dashboard') ? 'active' : ''}`}
@@ -93,7 +93,7 @@ const Navbar = () => {
 
           {/* User Auth Controls / Dropdown */}
           <div className="navbar-auth">
-            {user ? (
+            {user && (
               <div className="user-dropdown-container">
                 <button
                   className="user-profile-btn"
@@ -108,32 +108,19 @@ const Navbar = () => {
 
                 {dropdownOpen && (
                   <div className="dropdown-menu">
-                    <div className="dropdown-header">
-                      <p className="dropdown-user-email">{user.email || user.username}</p>
-                      <span className="role-badge">{user.role || 'User'}</span>
-                    </div>
                     <div className="dropdown-divider"></div>
                     <Link
-                      to={dashboardUrl}
+                      to="/profile"
                       className="dropdown-item"
                       onClick={() => setDropdownOpen(false)}
                     >
-                      📊 Dashboard
+                      👤 Personal Info
                     </Link>
                     <button className="dropdown-item logout-btn" onClick={handleLogout}>
                       🚪 Sign Out
                     </button>
                   </div>
                 )}
-              </div>
-            ) : (
-              <div className="auth-buttons">
-                <Link to="/login" className="btn btn-outline" onClick={() => setMobileMenuOpen(false)}>
-                  Log In
-                </Link>
-                <Link to="/register" className="btn btn-primary" onClick={() => setMobileMenuOpen(false)}>
-                  Get Started
-                </Link>
               </div>
             )}
           </div>

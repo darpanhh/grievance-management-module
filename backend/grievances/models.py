@@ -24,15 +24,18 @@ class Grievance(models.Model):
     """
     class Status(models.TextChoices):
         SUBMITTED = 'SUBMITTED', 'Submitted'
-        SPAM = 'SPAM', 'Spam'
         UNDER_REVIEW = 'UNDER_REVIEW', 'Under Review'
-        RESPONDED = 'RESPONDED', 'Responded'
+        IN_PROGRESS = 'IN_PROGRESS', 'In Progress'
         REOPENED = 'REOPENED', 'Reopened'
         ESCALATED = 'ESCALATED', 'Escalated'
         RESOLVED = 'RESOLVED', 'Resolved'
         REJECTED = 'REJECTED', 'Rejected'
-        APPEAL_PENDING = 'APPEAL_PENDING', 'Appeal Pending'
         CLOSED = 'CLOSED', 'Closed'
+
+    class SpamReviewStatus(models.TextChoices):
+        REVIEW = 'REVIEW', 'Needs Review'
+        SPAM = 'SPAM', 'Confirmed Spam'
+        NOT_SPAM = 'NOT_SPAM', 'Not Spam'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -62,6 +65,10 @@ class Grievance(models.Model):
         default=Status.SUBMITTED
     )
     is_anonymous = models.BooleanField(default=False)
+    is_sensitive = models.BooleanField(
+        default=False,
+        help_text="Flags that the grievance contains sensitive content that department staff/HOD/Campus Admin must confirm before viewing."
+    )
     secret_code = models.CharField(
         max_length=128,
         blank=True,
@@ -83,6 +90,31 @@ class Grievance(models.Model):
         blank=True,
         related_name='escalated_grievances',
         help_text="The officer this grievance was escalated to.",
+    )
+    spam_status = models.CharField(
+        max_length=20,
+        choices=SpamReviewStatus.choices,
+        null=True,
+        blank=True,
+        default=None,
+        help_text=(
+            "Department-side spam classification (null = never flagged by AI). "
+            "REVIEW = AI flagged, awaiting department decision; SPAM = confirmed "
+            "spam (kept out of the normal workflow); NOT_SPAM = accepted as genuine."
+        ),
+    )
+    spam_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='spam_reviews',
+        help_text="Department officer who made the final spam decision.",
+    )
+    spam_reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the department officer made the final spam decision.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -194,6 +226,75 @@ class Attachment(models.Model):
 
     def __str__(self):
         return f"Attachment '{self.file_name}' for GMS-{self.grievance.id:04d}"
+
+
+class ReopenAttachment(models.Model):
+    """
+    Uploaded attachments associated with a grievance reopen request.
+    Stored separately from original grievance attachments.
+    """
+    grievance = models.ForeignKey(
+        Grievance,
+        on_delete=models.CASCADE,
+        related_name='reopen_attachments'
+    )
+    file_name = models.CharField(max_length=255)
+    file_type = models.CharField(max_length=100)
+    file = models.FileField(upload_to='reopen_attachments/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['uploaded_at']
+
+    def __str__(self):
+        return f"Reopen Attachment '{self.file_name}' for GMS-{self.grievance.id:04d}"
+
+
+class StatusComment(models.Model):
+    """
+    A reminder comment posted by the submitter (student/staff) when a
+    grievance stays in UNDER_REVIEW or IN_PROGRESS for a long time.
+
+    One comment per status — enforced by the (grievance, status) unique
+    constraint.  The comment nudges the department HOD to act on a stuck
+    grievance.
+    """
+    grievance = models.ForeignKey(
+        Grievance,
+        on_delete=models.CASCADE,
+        related_name='status_comments',
+        help_text="The grievance this reminder comment belongs to."
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='status_comments',
+        help_text="The submitter who posted the reminder comment."
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Grievance.Status.choices,
+        help_text="The grievance status this comment was posted for "
+                  "(UNDER_REVIEW or IN_PROGRESS)."
+    )
+    content = models.TextField(help_text="The reminder comment asking for a status update.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['grievance', 'status'],
+                name='unique_status_comment_per_status',
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"Reminder comment ({self.get_status_display()}) "
+            f"on GMS-{self.grievance.id:04d} by {self.user.username}"
+        )
+
 
 class Request(models.Model):
     """

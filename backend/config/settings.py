@@ -208,6 +208,9 @@ EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+# Cap the SMTP socket timeout so a slow/unreachable mail server can never
+# hang an API request indefinitely (applies to the async email dispatch too).
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '15'))
 DEFAULT_FROM_EMAIL = os.getenv(
     'DEFAULT_FROM_EMAIL',
     'Grievance Management System <noreply@college.edu.np>',
@@ -223,9 +226,9 @@ BASE_URL = os.getenv('BASE_URL', 'http://localhost:8000')
 #   Both settings accept fractional values for testing (e.g. 0.0833 ≈ 5 min).
 #   Override via .env — no code changes required.
 #
-# Production defaults:  ESCALATION_HOURS=72  ESCALATION_INTERVAL_MINUTES=60
+# Production defaults:  ESCALATION_HOURS=168  ESCALATION_INTERVAL_MINUTES=60
 # Testing overrides:    ESCALATION_HOURS=0.0833  ESCALATION_INTERVAL_MINUTES=1
 
-ESCALATION_HOURS = float(os.getenv('ESCALATION_HOURS', '72'))            # default: 3 days
+ESCALATION_HOURS = float(os.getenv('ESCALATION_HOURS', '168'))           # default: 7 days
 ESCALATION_INTERVAL_MINUTES = float(os.getenv('ESCALATION_INTERVAL_MINUTES', '60'))  # default: 1 hour
 
