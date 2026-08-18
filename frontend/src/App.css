@@ -6283,18 +6283,11 @@
   padding-top: clamp(1.6rem, 4vw, 2.75rem);
   padding-bottom: 3rem;
   overflow: hidden;
-  background: radial-gradient(circle at 8% 18%, rgba(129, 140, 248, .16), transparent 22%), radial-gradient(circle at 90% 28%, rgba(94, 234, 212, .13), transparent 25%), #f8fafc;
+  background: var(--bg-main);
 }
 
 .track-page-redesign::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  opacity: .38;
-  pointer-events: none;
-  background-image: linear-gradient(rgba(99, 102, 241, .06) 1px, transparent 1px), linear-gradient(90deg, rgba(99, 102, 241, .06) 1px, transparent 1px);
-  background-size: 38px 38px;
-  mask-image: linear-gradient(to bottom, black, transparent 80%);
+  content: none;
 }
 
 .track-page-redesign .track-hero {

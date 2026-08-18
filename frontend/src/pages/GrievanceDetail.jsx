@@ -99,7 +99,7 @@ const GrievanceDetail = () => {
     })),
   ];
   const previewIndex = previewId !== null ? previewAttachments.findIndex((a) => {
-    if (previewId.startsWith('req-')) return a.id === previewId;
+    if (String(previewId).startsWith('req-')) return a.id === previewId;
     return `reopen-${a.id}` === previewId || a.id === previewId;
   }) : -1;
   const previewAttachment = previewIndex >= 0 ? previewAttachments[previewIndex] : null;
