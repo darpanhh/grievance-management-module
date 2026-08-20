@@ -21,7 +21,7 @@ const shortDeptName = (name = "") => {
     "Department of Civil Engineering": "Civil",
     "Department of Architecture": "Architecture",
     "Department of Applied Science and Chemical Engineering": "Applied & Chem.",
-    "Administrative Department": "Administration",
+    "General Department": "General",
   };
   return map[name] || name;
 };
