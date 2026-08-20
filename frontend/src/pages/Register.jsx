@@ -54,15 +54,13 @@ const Register = () => {
       } catch (err) {
         console.error('Failed to load departments from API, using default list:', err);
         const fallbackDepts = [
-          { id: 1, name: 'Department of Electronics & Computer Engineering (DOECE)', code: 'DOECE' },
-          { id: 2, name: 'Department of Civil Engineering (DOCE)', code: 'DOCE' },
-          { id: 3, name: 'Department of Mechanical & Aerospace Engineering (DOMAE)', code: 'DOMAE' },
-          { id: 4, name: 'Department of Electrical Engineering (DOEE)', code: 'DOEE' },
-          { id: 5, name: 'Department of Architecture & Urban Planning', code: 'DOAUP' },
-          { id: 6, name: 'Department of Science & Humanities', code: 'DOSH' },
-          { id: 7, name: 'Examination & Student Administration Wing', code: 'EXAM' },
-          { id: 8, name: 'Hostel & Campus Infrastructure Maintenance', code: 'INFRA' },
-          { id: 9, name: 'Administrative Department', code: 'ADMIN' },
+          { id: 10, name: 'Department of Electronics and Computer Engineering' },
+          { id: 11, name: 'Department of Electrical Engineering' },
+          { id: 12, name: 'Department of Mechanical and Aerospace Engineering' },
+          { id: 13, name: 'Department of Civil Engineering' },
+          { id: 14, name: 'Department of Architecture' },
+          { id: 15, name: 'Department of Applied Science and Chemical Engineering' },
+          { id: 20, name: 'General Department' },
         ];
         setDepartments(fallbackDepts);
         setFormData((prev) => ({ ...prev, department: String(fallbackDepts[0].id) }));
@@ -164,7 +162,7 @@ const Register = () => {
         <form onSubmit={handleSubmit} className="auth-form" autoComplete="off">
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="first_name">First Name *</label>
+              <label htmlFor="first_name">First Name <span className="required-star">*</span></label>
               <input
                 type="text"
                 id="first_name"
@@ -179,7 +177,7 @@ const Register = () => {
             </div>
 
             <div className="form-group">
-              <label htmlFor="last_name">Last Name *</label>
+              <label htmlFor="last_name">Last Name <span className="required-star">*</span></label>
               <input
                 type="text"
                 id="last_name"
@@ -196,7 +194,7 @@ const Register = () => {
 
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="username">Username / Roll No *</label>
+              <label htmlFor="username">Username / Roll No <span className="required-star">*</span></label>
               <input
                 type="text"
                 id="username"
@@ -211,7 +209,7 @@ const Register = () => {
             </div>
 
             <div className="form-group">
-              <label htmlFor="email">Email Address *</label>
+              <label htmlFor="email">Email Address <span className="required-star">*</span></label>
               <input
                 type="email"
                 id="email"
@@ -228,7 +226,7 @@ const Register = () => {
 
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="role">Account Role *</label>
+              <label htmlFor="role">Account Role <span className="required-star">*</span></label>
               <select
                 id="role"
                 name="role"
@@ -243,7 +241,7 @@ const Register = () => {
             </div>
 
             <div className="form-group">
-              <label htmlFor="department">Department *</label>
+              <label htmlFor="department">Department <span className="required-star">*</span></label>
               <select
                 id="department"
                 name="department"
@@ -263,7 +261,7 @@ const Register = () => {
           </div>
 
           <div className="form-group">
-            <label htmlFor="contact_number">Contact Number *</label>
+            <label htmlFor="contact_number">Contact Number <span className="required-star">*</span></label>
             <input
               type="tel"
               id="contact_number"
@@ -283,7 +281,7 @@ const Register = () => {
 
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="password">Password (min 8 chars) *</label>
+              <label htmlFor="password">Password (min 8 chars) <span className="required-star">*</span></label>
               <input
                 type="password"
                 id="password"
@@ -298,7 +296,7 @@ const Register = () => {
             </div>
 
             <div className="form-group">
-              <label htmlFor="password2">Confirm Password *</label>
+              <label htmlFor="password2">Confirm Password <span className="required-star">*</span></label>
               <input
                 type="password"
                 id="password2"
