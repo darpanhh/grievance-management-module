@@ -204,7 +204,11 @@ const AdminDashboard = () => {
             <h1>Campus Administration</h1>
             <p>Monitor campus-wide grievances and focus on what needs attention.</p>
           </div>
-          
+          <div className="dashboard-heading-actions">
+            <Link to="/admin/settings" className="btn btn-secondary admin-settings-nav-btn">
+              ⚙️ System Policies &amp; Limits
+            </Link>
+          </div>
         </header>
 
         {toast && <div className="workflow-toast success" role="status">{toast}<button aria-label="Dismiss message" onClick={() => setToast("")}>×</button></div>}

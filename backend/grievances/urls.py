@@ -118,4 +118,13 @@ urlpatterns = [
         views.admin_resolve_request,
         name='admin_resolve_request',
     ),
+
+    # ------------------------------------------------------------------
+    # Phase 9 — System Admin Runtime Settings
+    # ------------------------------------------------------------------
+    path(
+        'admin/settings/',
+        views.SystemSettingsView.as_view(),
+        name='admin_system_settings',
+    ),
 ]

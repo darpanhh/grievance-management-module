@@ -68,7 +68,16 @@ class GrievancesConfig(AppConfig):
 
             from grievances.services.escalation_service import run_escalation_cycle
 
-            interval = getattr(settings, 'ESCALATION_INTERVAL_MINUTES', 60)
+            from grievances.models import SystemSettings
+
+            try:
+                system_settings = SystemSettings.get()
+                interval = float(system_settings.escalation_interval_min)
+                threshold_hours = float(system_settings.escalation_hours)
+            except Exception:
+                interval = getattr(settings, 'ESCALATION_INTERVAL_MINUTES', 60)
+                threshold_hours = getattr(settings, 'ESCALATION_HOURS', 168)
+
             scheduler = BackgroundScheduler(daemon=True)
             scheduler.add_job(
                 run_escalation_cycle,
@@ -81,12 +90,13 @@ class GrievancesConfig(AppConfig):
                 next_run_time=timezone.now(),
             )
             scheduler.start()
+            GrievancesConfig._scheduler = scheduler
 
             logger.info(
                 'APScheduler started: escalation cycle every %.4g minutes '
                 '(threshold: %.4g hours). First run: immediate.',
                 interval,
-                getattr(settings, 'ESCALATION_HOURS', 72),
+                threshold_hours,
             )
         except Exception as exc:
             logger.warning(

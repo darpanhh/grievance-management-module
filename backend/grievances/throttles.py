@@ -3,8 +3,11 @@ from rest_framework.throttling import SimpleRateThrottle
 
 class DailyGrievanceThrottle(SimpleRateThrottle):
     """
-    Custom throttle that limits authenticated users to 3 grievance submissions
-    per calendar day (UTC).
+    Custom throttle that limits authenticated users to a configurable number
+    of grievance submissions per calendar day (UTC).
+
+    The limit is read from the SystemSettings singleton so Campus Admin can
+    change it at runtime without touching code or restarting the server.
 
     The rate is reset at midnight UTC. Exceeding the limit returns a 429 response
     with a human-readable message.
@@ -15,7 +18,18 @@ class DailyGrievanceThrottle(SimpleRateThrottle):
     """
 
     scope = 'daily_grievance'
-    rate = '3/day'
+
+    def _get_limit(self):
+        """Read the daily limit from SystemSettings (DB), fallback to 3."""
+        try:
+            from grievances.models import SystemSettings
+            return SystemSettings.get().daily_grievance_limit
+        except Exception:
+            return 3
+
+    @property
+    def rate(self):
+        return f'{self._get_limit()}/day'
 
     def get_cache_key(self, request, view):
         """
@@ -38,9 +52,10 @@ class DailyGrievanceThrottle(SimpleRateThrottle):
         Overrides the default message to inform the user when the limit resets.
         """
         from rest_framework.exceptions import Throttled
-        wait = self.wait()
+        limit = self._get_limit()
         detail = (
-            f'You have reached the daily limit of 3 grievances. '
+            f'You have reached the daily limit of {limit} grievance'
+            f'{"s" if limit != 1 else ""}. '
             f'Please try again tomorrow.'
         )
         raise Throttled(detail=detail)

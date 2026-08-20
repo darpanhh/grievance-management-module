@@ -12,6 +12,7 @@ from .models import (
     Response,
     StatusComment,
     StatusHistory,
+    SystemSettings,
 )
 
 User = get_user_model()
@@ -487,3 +488,41 @@ class GrievanceTrackSerializer(serializers.Serializer):
     """
     id = serializers.IntegerField()
     secret_code = serializers.CharField()
+
+
+class SystemSettingsSerializer(serializers.ModelSerializer):
+    """Serializer for runtime system settings management by Campus Admin."""
+    updated_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SystemSettings
+        fields = [
+            'id',
+            'daily_grievance_limit',
+            'escalation_hours',
+            'escalation_interval_min',
+            'updated_at',
+            'updated_by',
+            'updated_by_name',
+        ]
+        read_only_fields = ['id', 'updated_at', 'updated_by', 'updated_by_name']
+
+    def get_updated_by_name(self, obj):
+        if obj.updated_by:
+            return obj.updated_by.get_full_name() or obj.updated_by.username
+        return None
+
+    def validate_daily_grievance_limit(self, value):
+        if value < 1 or value > 100:
+            raise serializers.ValidationError("Daily grievance limit must be between 1 and 100.")
+        return value
+
+    def validate_escalation_hours(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Escalation hours threshold must be greater than 0.")
+        return value
+
+    def validate_escalation_interval_min(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Escalation check interval must be greater than 0 minutes.")
+        return value

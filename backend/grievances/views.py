@@ -29,7 +29,7 @@ from rest_framework.response import Response
 logger = logging.getLogger(__name__)
 
 from accounts.models import Department
-from .models import AIAnalysis, Attachment, Category, Grievance, Request, StatusComment, StatusHistory
+from .models import AIAnalysis, Attachment, Category, Grievance, Request, StatusComment, StatusHistory, SystemSettings
 from .permissions import IsCampusAdmin
 from .serializers import (
     AIAnalysisSerializer,
@@ -41,6 +41,7 @@ from .serializers import (
     GrievanceTrackSerializer,
     RequestSerializer,
     StatusCommentSerializer,
+    SystemSettingsSerializer,
 )
 from .services.spam_detector import get_spam_detector
 from .services.routing import route_grievance
@@ -197,14 +198,19 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
 
     def check_throttles(self, request):
         """
-        Apply the daily submission limit (max 3 per user) on POST requests.
+        Apply the dynamic daily submission limit on POST requests.
 
-        The limit is checked here by counting existing records in the
-        database for the current calendar day, rather than using DRF's
-        cache-based throttle, so it is accurate regardless of cache backend.
+        The limit is read from SystemSettings and checked by counting existing
+        records in the database for the current calendar day, ensuring accuracy
+        across server restarts and cache backends.
         """
         if request.method != 'POST':
             return
+
+        try:
+            limit = SystemSettings.get().daily_grievance_limit
+        except Exception:
+            limit = 3
 
         today = timezone.now().date()
         count = Grievance.objects.filter(
@@ -212,11 +218,12 @@ class GrievanceListCreateView(generics.ListCreateAPIView):
             created_at__date=today,
         ).count()
 
-        if count >= 3:
+        if count >= limit:
             raise Throttled(
                 detail=(
-                    'You have reached the daily limit of 3 grievances. '
-                    'Please try again tomorrow.'
+                    f'You have reached the daily limit of {limit} grievance'
+                    f'{"s" if limit != 1 else ""}. '
+                    f'Please try again tomorrow.'
                 )
             )
 
@@ -2267,4 +2274,45 @@ def admin_resolve_request(request, pk):
 
     serializer = RequestSerializer(req_obj, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9 — System Admin Runtime Settings (Campus Admin only)
+# ---------------------------------------------------------------------------
+
+
+class SystemSettingsView(generics.RetrieveUpdateAPIView):
+    """
+    GET: Retrieve system settings (daily grievance limit, escalation hours, escalation interval).
+    PUT/PATCH: Update system settings (Campus Admin only).
+    """
+    permission_classes = [permissions.IsAuthenticated, IsCampusAdmin]
+    serializer_class = SystemSettingsSerializer
+
+    def get_object(self):
+        return SystemSettings.get()
+
+    def perform_update(self, serializer):
+        old_settings = SystemSettings.get()
+        old_interval = old_settings.escalation_interval_min
+        instance = serializer.save(updated_by=self.request.user)
+
+        # If escalation interval changed, update the scheduler trigger for future runs
+        if instance.escalation_interval_min != old_interval:
+            try:
+                from grievances.apps import GrievancesConfig
+                from apscheduler.triggers.interval import IntervalTrigger
+                scheduler = getattr(GrievancesConfig, '_scheduler', None)
+                if scheduler and scheduler.running:
+                    scheduler.reschedule_job(
+                        'escalation_cycle',
+                        trigger=IntervalTrigger(minutes=float(instance.escalation_interval_min)),
+                    )
+                    logger.info(
+                        "Rescheduled escalation_cycle to every %s minutes by %s",
+                        instance.escalation_interval_min,
+                        self.request.user.username,
+                    )
+            except Exception as exc:
+                logger.warning("Could not dynamically reschedule escalation job: %s", exc)
 

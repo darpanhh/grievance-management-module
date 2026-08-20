@@ -89,6 +89,35 @@ const Navbar = () => {
                 Dashboard
               </Link>
             )}
+
+            {userRole === 'HOD' && (
+              <Link
+                to="/department/grievances"
+                className={`nav-link ${isActive('/department/grievances') ? 'active' : ''}`}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Dashboard
+              </Link>
+            )}
+
+            {userRole === 'CAMPUS_ADMIN' && (
+              <>
+                <Link
+                  to="/admin/grievances"
+                  className={`nav-link ${isActive('/admin/grievances') ? 'active' : ''}`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  to="/admin/settings"
+                  className={`nav-link ${isActive('/admin/settings') ? 'active' : ''}`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  System Settings and Policies
+                </Link>
+              </>
+            )}
           </div>
 
           {/* User Auth Controls / Dropdown */}
@@ -116,6 +145,15 @@ const Navbar = () => {
                     >
                       👤 Personal Info
                     </Link>
+                    {userRole === 'CAMPUS_ADMIN' && (
+                      <Link
+                        to="/admin/settings"
+                        className="dropdown-item"
+                        onClick={() => setDropdownOpen(false)}
+                      >
+                        ⚙️ System Settings and Policies
+                      </Link>
+                    )}
                     <button className="dropdown-item logout-btn" onClick={handleLogout}>
                       🚪 Sign Out
                     </button>

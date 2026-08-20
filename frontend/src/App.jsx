@@ -12,6 +12,7 @@ import StudentDashboard from './pages/StudentDashboard';
 import GrievanceDetail from './pages/GrievanceDetail';
 import DepartmentDashboard from './pages/DepartmentDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+import SystemSettings from './pages/SystemSettings';
 import Profile from './pages/Profile';
 import './App.css';
 
@@ -62,7 +63,7 @@ function App() {
 function AppShell() {
   const location = useLocation();
   const { user } = useAuth();
-  const hideFooter = location.pathname.startsWith('/grievances/') || ['/dashboard', '/department/grievances', '/admin/grievances', '/login', '/register', '/password-reset'].includes(location.pathname) || (location.pathname === '/' && !!user);
+  const hideFooter = location.pathname.startsWith('/grievances/') || ['/dashboard', '/department/grievances', '/admin/grievances', '/admin/settings', '/login', '/register', '/password-reset'].includes(location.pathname) || (location.pathname === '/' && !!user);
   return (
     <div className="app-layout">
       <Navbar />
@@ -117,6 +118,14 @@ function AppShell() {
             element={
               <ProtectedRoute allowedRoles={['CAMPUS_ADMIN']}>
                 <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/settings"
+            element={
+              <ProtectedRoute allowedRoles={['CAMPUS_ADMIN']}>
+                <SystemSettings />
               </ProtectedRoute>
             }
           />

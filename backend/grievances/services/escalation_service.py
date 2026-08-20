@@ -38,9 +38,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def get_escalation_hours() -> int:
-    """Return the inactivity threshold (hours) from settings."""
-    return getattr(settings, 'ESCALATION_HOURS', 168)
+def get_escalation_hours() -> float:
+    """Return the inactivity threshold (hours) from SystemSettings or settings.py fallback."""
+    try:
+        from grievances.models import SystemSettings
+        return float(SystemSettings.get().escalation_hours)
+    except Exception:
+        return float(getattr(settings, 'ESCALATION_HOURS', 168))
 
 
 def format_inactivity_window() -> str:

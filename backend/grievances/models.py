@@ -389,3 +389,54 @@ class Request(models.Model):
     def __str__(self):
         return f"{self.get_request_type_display()} for GMS-{self.grievance.id:04d} [{self.get_status_display()}]"
 
+
+class SystemSettings(models.Model):
+    """
+    Singleton model that stores runtime-configurable system settings.
+    Campus Admin can adjust these via the API without touching .env or code.
+
+    Only one row is ever allowed (enforced by save() override).
+    Use SystemSettings.get() as the canonical accessor.
+    """
+    daily_grievance_limit = models.PositiveSmallIntegerField(
+        default=3,
+        help_text="Maximum number of grievances a user can submit per calendar day.",
+    )
+    escalation_hours = models.FloatField(
+        default=168.0,
+        help_text="Hours of inactivity before a grievance is auto-escalated (e.g. 168 = 7 days).",
+    )
+    escalation_interval_min = models.FloatField(
+        default=60.0,
+        help_text="How often (in minutes) the escalation checker runs.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='settings_updates',
+        help_text="Campus Admin who last modified these settings.",
+    )
+
+    class Meta:
+        verbose_name = "System Settings"
+        verbose_name_plural = "System Settings"
+
+    def __str__(self):
+        return (
+            f"SystemSettings — limit={self.daily_grievance_limit}/day, "
+            f"escalation={self.escalation_hours}h every {self.escalation_interval_min}min"
+        )
+
+    def save(self, *args, **kwargs):
+        """Enforce singleton: always use pk=1."""
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get(cls):
+        """Return the singleton, creating it with defaults if it doesn't exist yet."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
