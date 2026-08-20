@@ -145,15 +145,6 @@ const Navbar = () => {
                     >
                       👤 Personal Info
                     </Link>
-                    {userRole === 'CAMPUS_ADMIN' && (
-                      <Link
-                        to="/admin/settings"
-                        className="dropdown-item"
-                        onClick={() => setDropdownOpen(false)}
-                      >
-                        ⚙️ System Settings and Policies
-                      </Link>
-                    )}
                     <button className="dropdown-item logout-btn" onClick={handleLogout}>
                       🚪 Sign Out
                     </button>

@@ -82,9 +82,9 @@ const SubmitGrievance = () => {
             <div className="form-group"><label htmlFor="category">Category <span className="required-star">*</span></label><select id="category" name="category" value={form.category} onChange={updateField} required disabled={loadingOptions}><option value="">Select a category</option>{options.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
             <div className="form-group"><label htmlFor="department">Department <span className="required-star">*</span></label><select id="department" name="department" value={form.department} onChange={updateField} required disabled={loadingOptions}><option value="">Select a department</option>{options.departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></div>
           </div>
-          <label className="anonymous-toggle"><input type="checkbox" name="is_anonymous" checked={form.is_anonymous} onChange={updateField} /><span><strong>Submit anonymously</strong><small>Your identity remains anonymous and no one be able to see your identity. You will receive a secret tracking code once—save it securely.</small></span></label>
+          <label className="anonymous-toggle"><input type="checkbox" name="is_anonymous" checked={form.is_anonymous} onChange={updateField} /><span><strong>Submit anonymously</strong><small>Your identity remains anonymous and no one be able to see your identity.</small></span></label>
           <div className="form-group">
-            <label>Is this grievance sensitive?</label>
+            <label>Is this grievance contain sensitive information?</label>
             <div className="sensitive-radio-row">
               <label className="sensitive-radio-label">
                 <input type="radio" name="is_sensitive" value="false" checked={form.is_sensitive === false} onChange={updateField} />

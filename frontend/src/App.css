@@ -12213,17 +12213,34 @@
    Phase 9: System Admin Settings & Policies Styling
    ========================================================================== */
 
-.settings-header-row {
+.page-back-nav {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 1rem;
-  margin-bottom: 1.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
 }
 
-.settings-breadcrumb {
-  margin-bottom: 0.5rem;
+.back-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.05);
+  transition: all 0.2s ease;
+}
+
+.back-nav-btn:hover {
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-color: #93c5fd;
+  transform: translateX(-3px);
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.12);
+  text-decoration: none;
 }
 
 .settings-back-link {
@@ -12492,4 +12509,61 @@
   .settings-actions .btn {
     width: 100%;
   }
-}
+}
+
+.system-settings-success-modal {
+  max-width: 440px;
+  animation: modalPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 2.25rem 2rem;
+}
+
+.setting-success-badge {
+  width: 60px;
+  height: 60px;
+  background: #10b981;
+  box-shadow: 0 8px 20px -4px rgba(16, 185, 129, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.25rem;
+  border-radius: 50%;
+  color: #ffffff;
+  animation: tickBounce 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes tickBounce {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.settings-success-summary {
+  background: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  text-align: left;
+}
+
+.settings-success-summary .summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.settings-success-summary .summary-item strong {
+  color: var(--text-main);
+  font-weight: 600;
+}
+

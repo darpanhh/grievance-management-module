@@ -13,7 +13,9 @@ const SystemSettings = () => {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState({ type: '', message: '' });
+  const [errorMsg, setErrorMsg] = useState('');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [savedSummary, setSavedSummary] = useState(null);
 
   useEffect(() => {
     fetchSettings();
@@ -22,6 +24,7 @@ const SystemSettings = () => {
   const fetchSettings = async () => {
     try {
       setLoading(true);
+      setErrorMsg('');
       const res = await api.get('admin/settings/');
       const hours = res.data.escalation_hours || 168;
       const days = Number((hours / 24).toFixed(2));
@@ -33,10 +36,7 @@ const SystemSettings = () => {
         updated_by_name: res.data.updated_by_name,
       });
     } catch (err) {
-      setToast({
-        type: 'error',
-        message: err.response?.data?.detail || 'Failed to load system settings.',
-      });
+      setErrorMsg(err.response?.data?.detail || 'Failed to load system settings.');
     } finally {
       setLoading(false);
     }
@@ -53,22 +53,22 @@ const SystemSettings = () => {
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
-    setToast({ type: '', message: '' });
+    setErrorMsg('');
 
     if (settings.daily_grievance_limit < 1 || settings.daily_grievance_limit > 100) {
-      setToast({ type: 'error', message: 'Daily limit must be between 1 and 100 submissions.' });
+      setErrorMsg('Daily limit must be between 1 and 100 submissions.');
       setSaving(false);
       return;
     }
 
     if (settings.escalation_days <= 0) {
-      setToast({ type: 'error', message: 'Escalation days must be greater than 0.' });
+      setErrorMsg('Escalation days must be greater than 0.');
       setSaving(false);
       return;
     }
 
     if (settings.escalation_interval_min <= 0) {
-      setToast({ type: 'error', message: 'Escalation check interval must be greater than 0 minutes.' });
+      setErrorMsg('Escalation check interval must be greater than 0 minutes.');
       setSaving(false);
       return;
     }
@@ -82,17 +82,20 @@ const SystemSettings = () => {
       const res = await api.patch('admin/settings/', payload);
       const hours = res.data.escalation_hours || 168;
       const days = Number((hours / 24).toFixed(2));
-      setSettings({
+      const updatedState = {
         daily_grievance_limit: res.data.daily_grievance_limit,
         escalation_days: Number.isInteger(days) ? days : days,
         escalation_interval_min: res.data.escalation_interval_min,
         updated_at: res.data.updated_at,
         updated_by_name: res.data.updated_by_name,
+      };
+      setSettings(updatedState);
+      setSavedSummary({
+        daily_limit: updatedState.daily_grievance_limit,
+        escalation_days: updatedState.escalation_days,
+        interval_min: updatedState.escalation_interval_min,
       });
-      setToast({
-        type: 'success',
-        message: 'System settings successfully updated! Changes take effect immediately.',
-      });
+      setShowSuccessModal(true);
     } catch (err) {
       const errData = err.response?.data;
       let msg = 'Failed to update settings.';
@@ -100,7 +103,7 @@ const SystemSettings = () => {
         const firstKey = Object.keys(errData)[0];
         msg = Array.isArray(errData[firstKey]) ? errData[firstKey][0] : String(errData[firstKey]);
       }
-      setToast({ type: 'error', message: msg });
+      setErrorMsg(msg);
     } finally {
       setSaving(false);
     }
@@ -134,14 +137,16 @@ const SystemSettings = () => {
   return (
     <section className="dashboard-page admin-settings-page">
       <div className="dashboard-container">
+        {/* Top-Left Back Navigation */}
+        <div className="page-back-nav">
+          <Link to="/admin/grievances" className="btn btn-secondary back-nav-btn">
+            ← Back to Dashboard
+          </Link>
+        </div>
+
         {/* Header */}
-        <header className="dashboard-heading settings-header-row">
+        <header className="dashboard-heading">
           <div>
-            <div className="settings-breadcrumb">
-              <Link to="/admin/grievances" className="settings-back-link">
-                ← Back to Dashboard
-              </Link>
-            </div>
             <h1>System Configuration &amp; Policies</h1>
             <p>
               Manage platform-wide rate limits and grievance auto-escalation parameters.
@@ -149,18 +154,18 @@ const SystemSettings = () => {
           </div>
         </header>
 
-        {/* Toasts */}
-        {toast.message && (
+        {/* Error Alert */}
+        {errorMsg && (
           <div
-            className={`workflow-toast ${toast.type === 'error' ? 'error' : 'success'}`}
+            className="workflow-toast error"
             style={{ marginBottom: '1.5rem' }}
             role="alert"
           >
-            <span>{toast.type === 'error' ? '⚠️ ' : '✅ '}{toast.message}</span>
+            <span>⚠️ {errorMsg}</span>
             <button
               type="button"
-              aria-label="Dismiss message"
-              onClick={() => setToast({ type: '', message: '' })}
+              aria-label="Dismiss error"
+              onClick={() => setErrorMsg('')}
             >
               ×
             </button>
@@ -323,10 +328,7 @@ const SystemSettings = () => {
           <div className="admin-settings-footer">
             <div className="settings-audit-info">
               <span>🕒 <strong>Last Updated:</strong> {formatLastUpdated(settings.updated_at)}</span>
-              {settings.updated_by_name && (
-                <span> • 👤 <strong>Modified By:</strong> {settings.updated_by_name}</span>
-              )}
-            </div>
+             </div>
 
             <div className="settings-actions">
               <Link to="/admin/grievances" className="btn btn-secondary">
@@ -342,6 +344,61 @@ const SystemSettings = () => {
             </div>
           </div>
         </form>
+
+        {/* Success Popup Modal with Tick Sign */}
+        {showSuccessModal && (
+          <div
+            className="modal-backdrop"
+            role="presentation"
+            onClick={() => setShowSuccessModal(false)}
+          >
+            <div
+              className="confirmation-modal system-settings-success-modal"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="success-modal-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="success-mark setting-success-badge" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+
+              <h2 id="success-modal-title">Settings Updated Successfully!</h2>
+              <p>System policies and rate limits have been updated and are now live.</p>
+
+              {savedSummary && (
+                <div className="settings-success-summary">
+                  <div className="summary-item">
+                    <span className="summary-label">Daily Submission Limit:</span>
+                    <strong>{savedSummary.daily_limit} grievance{savedSummary.daily_limit !== 1 ? 's' : ''} / user / day</strong>
+                  </div>
+                  <div className="summary-item">
+                    <span className="summary-label">Escalation Threshold:</span>
+                    <strong>{savedSummary.escalation_days} day{savedSummary.escalation_days !== 1 ? 's' : ''}</strong>
+                  </div>
+                  <div className="summary-item">
+                    <span className="summary-label">Check Scanner Interval:</span>
+                    <strong>Every {savedSummary.interval_min} minute{savedSummary.interval_min !== 1 ? 's' : ''}</strong>
+                  </div>
+                </div>
+              )}
+
+              <div className="modal-actions" style={{ marginTop: '1.75rem', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ minWidth: '140px' }}
+                  onClick={() => setShowSuccessModal(false)}
+                  autoFocus
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
