@@ -7386,6 +7386,11 @@
   font-weight: 700;
 }
 
+.required-star {
+  color: #e11d48;
+  font-weight: 600;
+}
+
 .request-modal .required-star {
   color: #e11d48;
 }
